@@ -41,21 +41,33 @@
                                    Foreground="{StaticResource CyanBrush}" FontSize="12" FontWeight="SemiBold"/>
                     </StackPanel>
                 </StackPanel>
-                <!-- Stable extension point for the independent launcher-auth work. -->
                 <ContentControl x:Name="AccountStatusHost" Grid.Column="1" VerticalAlignment="Center"
                                 automation:AutomationProperties.Name="Player account status">
                     <Border Background="#B8102636" BorderBrush="#624FA3B8" BorderThickness="1" CornerRadius="8" Padding="13,9">
-                        <StackPanel Orientation="Horizontal">
-                            <Border Width="28" Height="28" Background="#2431D8FF" CornerRadius="14" Margin="0,0,9,0">
-                                <TextBlock Text="◎" Foreground="{StaticResource CyanBrush}" FontSize="17"
-                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel>
-                                <TextBlock x:Name="AccountDisplayNameText" Text="GUEST PILOT" FontFamily="{StaticResource DisplayFont}"
-                                           FontSize="13" FontWeight="SemiBold"/>
-                                <TextBlock x:Name="AccountStateText" Text="Playing locally" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                        <Grid>
+                            <StackPanel x:Name="GuestAccountHeader" Orientation="Horizontal">
+                                <Border Width="28" Height="28" Background="#2431D8FF" CornerRadius="14" Margin="0,0,9,0">
+                                    <TextBlock Text="◎" Foreground="{StaticResource CyanBrush}" FontSize="17"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <StackPanel>
+                                    <TextBlock Text="GUEST PILOT" FontFamily="{StaticResource DisplayFont}"
+                                               FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="Sign in below to launch" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                                </StackPanel>
                             </StackPanel>
-                        </StackPanel>
+                            <StackPanel x:Name="SignedInAccountHeader" Orientation="Horizontal" Visibility="Collapsed">
+                                <StackPanel Margin="0,0,13,0">
+                                    <TextBlock x:Name="SignedInUsernameText" FontFamily="{StaticResource DisplayFont}"
+                                               FontSize="13" FontWeight="SemiBold" TextAlignment="Right"/>
+                                    <TextBlock Text="SESSION READY" Foreground="{StaticResource NanoGreenBrush}"
+                                               FontFamily="{StaticResource DisplayFont}" FontSize="10" TextAlignment="Right"/>
+                                </StackPanel>
+                                <Button Content="SIGN _OUT" Style="{StaticResource SecondaryButtonStyle}"
+                                        Click="LogoutButton_Click" Padding="10,7"
+                                        automation:AutomationProperties.Name="Sign out of the launcher"/>
+                            </StackPanel>
+                        </Grid>
                     </Border>
                 </ContentControl>
             </Grid>
@@ -78,6 +90,32 @@
                                    FontFamily="{StaticResource DisplayFont}" FontWeight="Bold" FontSize="30" LineHeight="31"
                                    TextWrapping="Wrap" MaxWidth="390" HorizontalAlignment="Left"/>
                     </StackPanel>
+                    <Border x:Name="AuthenticationPanel" VerticalAlignment="Bottom" HorizontalAlignment="Left"
+                            Width="365" Margin="4,0,0,7" Padding="18,16" CornerRadius="10"
+                            Background="#F00A1928" BorderBrush="#824FA3B8" BorderThickness="1">
+                        <StackPanel x:Name="LoginPanel">
+                            <TextBlock Text="PILOT AUTHORIZATION" FontFamily="{StaticResource DisplayFont}"
+                                       Foreground="{StaticResource CyanBrush}" FontSize="11" FontWeight="SemiBold"/>
+                            <TextBlock Text="SIGN IN TO DEPLOY" FontFamily="{StaticResource DisplayFont}"
+                                       FontSize="20" FontWeight="Bold" Margin="0,2,0,10"/>
+                            <TextBox x:Name="UsernameTextBox" Height="34" Padding="9,6" Margin="0,0,0,8"
+                                     ToolTip="Local game account username" KeyDown="LoginField_KeyDown"
+                                     automation:AutomationProperties.Name="Username"/>
+                            <PasswordBox x:Name="PasswordInput" Height="34" Padding="9,6" Margin="0,0,0,8"
+                                         ToolTip="Local game account password" KeyDown="LoginField_KeyDown"
+                                         automation:AutomationProperties.Name="Password"/>
+                            <CheckBox x:Name="RememberSessionCheckBox" Content="Remember Password" IsChecked="False"
+                                      Unchecked="RememberSessionCheckBox_Unchecked" Foreground="{StaticResource TextBrush}"/>
+                            <TextBlock Text="Remembers a Windows-protected session, never your password."
+                                       Foreground="{StaticResource MutedTextBrush}" FontSize="10" Margin="20,2,0,8"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock x:Name="AuthStatusText" Foreground="#FFFFD27D" FontSize="11" MinHeight="16"
+                                       TextWrapping="Wrap" Margin="0,0,0,7"
+                                       automation:AutomationProperties.LiveSetting="Assertive"/>
+                            <Button x:Name="LoginButton" Content="SIGN _IN" Click="LoginButton_Click"
+                                    Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Stretch"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
 
                 <Border Grid.Column="2" Background="{StaticResource PanelBrush}" BorderBrush="#6C4BA7BA"
@@ -146,8 +184,10 @@
                                 <TextBlock x:Name="InstallPathText" TextTrimming="CharacterEllipsis" FontSize="11"
                                            Foreground="#FFD4E1E8" Margin="0,3,12,0"/>
                             </StackPanel>
-                            <TextBlock Grid.Column="1" Text="SECURE UPDATE" Foreground="{StaticResource NanoGreenBrush}"
-                                       FontFamily="{StaticResource DisplayFont}" FontSize="10" VerticalAlignment="Bottom"/>
+                            <Button Grid.Column="1" Content="CHANGE" Click="GameLocationButton_Click"
+                                    Style="{StaticResource SecondaryButtonStyle}" Padding="8,5" FontSize="10"
+                                    ToolTip="Choose the FFReStart game executable"
+                                    automation:AutomationProperties.Name="Change game executable location"/>
                         </Grid>
                     </Grid>
                 </Border>

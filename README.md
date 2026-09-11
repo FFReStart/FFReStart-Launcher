@@ -26,6 +26,9 @@ The WPF UI uses a small resource-driven visual system in `GameLauncher/App.xaml`
 
 Community and Support are separate destinations exposed through `LauncherLinks.GetUrl`. Both open through Windows' safe default-browser shell behavior. Run the focused contract checks with:
 
+- Community/Discord: <https://discord.gg/Q5je3v9Bjg>
+- Support: <https://discord.gg/VNVjmPn2Fn>
+
 ```powershell
 dotnet run --project GameLauncher.ContractTests/GameLauncher.ContractTests.csproj
 ```
@@ -35,3 +38,9 @@ For UI-only local review without contacting the update service or launching the 
 ```powershell
 dotnet run --project "GameLauncher/FFReStart GameLauncher.csproj" -- --preview
 ```
+
+## Login and pre-authenticated launch
+
+Create a local account through the game once, then sign in from the launcher. Play starts the game with the shared `Game.exe --auth-token <token>` contract. The launcher never sends the password to the game.
+
+“Remember Password” is opt-in and stores a revalidated derived session—not the password—in a Windows current-user DPAPI-protected blob. The launcher does not fall back to plaintext storage. See [Launcher authentication](docs/authentication.md) for setup, recovery, token format, cleanup behavior, and the actual local-account threat model.

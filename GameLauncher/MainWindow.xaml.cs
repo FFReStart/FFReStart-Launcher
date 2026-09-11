@@ -7,7 +7,10 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
+using GameLauncher.Authentication;
+using Microsoft.Win32;
 
 namespace GameLauncher
 {
@@ -15,6 +18,7 @@ namespace GameLauncher
     {
         Checking,
         Ready,
+        OfflineReady,
         Failed,
         DownloadingGame,
         DownloadingUpdate,
@@ -48,9 +52,12 @@ namespace GameLauncher
         private readonly string rootPath;
         private readonly string versionFile;
         private readonly string gameZip;
-        private readonly string gameFolder;
-        private readonly string gameExe;
-        private static readonly HttpClient HttpClient = new HttpClient();
+        private readonly string settingsFolder;
+        private readonly LauncherSettingsStore launcherSettingsStore;
+        private readonly GameExecutableLocator gameExecutableLocator;
+        private readonly LauncherAuthenticationService authenticationService;
+        private LauncherSettings launcherSettings;
+        private static readonly HttpClient HttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         private readonly CancellationTokenSource shutdown = new CancellationTokenSource();
         private LauncherStatus status;
 
@@ -80,11 +87,48 @@ namespace GameLauncher
 
             versionFile = Path.Combine(rootPath, "Version.txt");
             gameZip = Path.Combine(rootPath, "FFReStart-Dev-Build.zip");
-            gameFolder = Path.Combine(rootPath, "FFReStart-Dev-Build");
-            gameExe = Path.Combine(gameFolder, "FFReStart-Dev-Build.exe");
+            settingsFolder = Path.Combine(rootPath, "Launcher");
+            var dataProtector = new DpapiDataProtector();
+            launcherSettingsStore = new LauncherSettingsStore(Path.Combine(settingsFolder, "settings.dat"), dataProtector);
+            try
+            {
+                launcherSettings = launcherSettingsStore.Load();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                launcherSettings = new LauncherSettings();
+                AuthStatusText.Text = "Protected launcher settings could not be recovered. Defaults are in use.";
+            }
+            gameExecutableLocator = new GameExecutableLocator(rootPath);
+            string sessionPath = Path.Combine(settingsFolder, "auth-session.dat");
+            bool hadRememberedSession = File.Exists(sessionPath);
+            authenticationService = new LauncherAuthenticationService(
+                new GameAccountRepository(GameAccountRepository.GetDefaultAccountDatabasePath()),
+                new SecureSessionStore(sessionPath, dataProtector),
+                new AuthTicketService());
 
-            InstallPathText.Text = rootPath;
-            InstallPathText.ToolTip = rootPath;
+            AuthenticationResult? restored = null;
+            try
+            {
+                restored = authenticationService.RestoreSession();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                AuthStatusText.Text = "The protected remembered session could not be recovered or removed. Close other launcher instances and sign in again.";
+            }
+
+            if (hadRememberedSession && restored is { Success: false })
+            {
+                AuthStatusText.Text = restored.Failure switch
+                {
+                    AuthenticationFailure.AccountStoreUnavailable => "Your local game account could not be checked. Sign in after it is available.",
+                    AuthenticationFailure.AccountStoreInvalid => "The local account database could not be read. Open the game to repair it.",
+                    _ => "Your remembered session is no longer valid. Please sign in again."
+                };
+            }
+
+            RefreshAuthenticationUi();
+            RefreshGameLocationText();
             Status = LauncherStatus.Checking;
         }
 
@@ -108,6 +152,7 @@ namespace GameLauncher
         {
             shutdown.Cancel();
             shutdown.Dispose();
+            authenticationService.Dispose();
         }
 
         private void ApplyStatusPresentation(LauncherStatus currentStatus)
@@ -129,7 +174,15 @@ namespace GameLauncher
                     StatusTitleText.Text = "READY FOR DEPLOYMENT";
                     StatusDetailText.Text = "Your game is current. Jump back into the fight.";
                     StatusDot.Fill = FindBrush("NanoGreenBrush");
-                    PlayButton.Content = "PLAY FFReSTART";
+                    PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY FFReSTART" : "SIGN IN TO PLAY";
+                    PlayButton.IsEnabled = true;
+                    break;
+
+                case LauncherStatus.OfflineReady:
+                    StatusTitleText.Text = "OFFLINE MODE AVAILABLE";
+                    StatusDetailText.Text = "The update service is unavailable. You can launch the installed game or try again later.";
+                    StatusDot.Fill = FindBrush("CyanBrush");
+                    PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY INSTALLED BUILD" : "SIGN IN TO PLAY";
                     PlayButton.IsEnabled = true;
                     break;
 
@@ -203,9 +256,16 @@ namespace GameLauncher
             {
                 // Closing the launcher intentionally cancels in-flight network and file work.
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ShowFailure("We couldn't reach the update service. Check your connection, then try again.", ex);
+                if (gameExecutableLocator.Find(launcherSettings.GameExecutablePath) is not null)
+                {
+                    Status = LauncherStatus.OfflineReady;
+                }
+                else
+                {
+                    ShowFailure("We couldn't reach the update service and no installed game was found. Check your connection, then try again.");
+                }
             }
         }
 
@@ -252,15 +312,16 @@ namespace GameLauncher
                 File.WriteAllText(versionFile, onlineVersion.ToString());
 
                 VersionText.Text = $"v{onlineVersion}";
+                RefreshGameLocationText();
                 Status = LauncherStatus.Ready;
             }
             catch (OperationCanceledException) when (shutdown.IsCancellationRequested)
             {
                 // The window is closing.
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ShowFailure("The update couldn't be completed. Check your connection, then try again; existing files are preserved.", ex);
+                ShowFailure("The update couldn't be completed. Check your connection, then try again; existing files are preserved.");
             }
         }
 
@@ -280,30 +341,214 @@ namespace GameLauncher
             }
         }
 
-        private void ShowFailure(string playerMessage, Exception exception = null)
+        private void ShowFailure(string playerMessage)
         {
             Status = LauncherStatus.Failed;
             StatusDetailText.Text = playerMessage;
-            StatusDetailText.ToolTip = exception?.Message;
+            StatusDetailText.ToolTip = null;
         }
 
         private async void PlayButton_Click(object sender, RoutedEventArgs e)
         {
-            if (Status == LauncherStatus.Ready)
+            if (Status is LauncherStatus.Ready or LauncherStatus.OfflineReady)
             {
-                if (!File.Exists(gameExe))
+                if (!authenticationService.IsAuthenticated)
                 {
-                    ShowFailure("The game executable is missing. Select Try Again to repair the installation.");
+                    AuthStatusText.Text = "Sign in with your local game account before launching.";
+                    UsernameTextBox.Focus();
                     return;
                 }
 
-                Process.Start(new ProcessStartInfo(gameExe) { WorkingDirectory = gameFolder });
-                Close();
+                TicketResult ticket = authenticationService.CreateLaunchTicket();
+                if (!ticket.Success || string.IsNullOrEmpty(ticket.Token))
+                {
+                    AuthStatusText.Text = ticket.ErrorMessage ?? "Your session could not be validated. Please sign in again.";
+                    RefreshAuthenticationUi();
+                    return;
+                }
+
+                string? gameExecutable = gameExecutableLocator.Find(launcherSettings.GameExecutablePath);
+                if (string.IsNullOrEmpty(gameExecutable))
+                {
+                    ShowFailure("The game executable is missing. Repair the installation or choose its location below.");
+                    return;
+                }
+
+                ProcessStartInfo startInfo = GameLaunchCommand.Create(gameExecutable, ticket.Token);
+                try
+                {
+                    Process.Start(startInfo);
+                    startInfo.ArgumentList.Clear();
+                    Close();
+                }
+                catch
+                {
+                    startInfo.ArgumentList.Clear();
+                    ShowFailure("Windows could not start the selected game executable. Check the game location and try again.");
+                }
             }
             else if (Status == LauncherStatus.Failed)
             {
                 await CheckForUpdatesAsync();
             }
+        }
+
+        private async void LoginButton_Click(object sender, RoutedEventArgs e) => await SignInAsync();
+
+        private async void LoginField_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            await SignInAsync();
+        }
+
+        private async Task SignInAsync()
+        {
+            string username = UsernameTextBox.Text;
+            using var securePassword = PasswordInput.SecurePassword;
+            if (string.IsNullOrWhiteSpace(username) || securePassword.Length == 0)
+            {
+                authenticationService.ForgetRememberedSession();
+                PasswordInput.Clear();
+                AuthStatusText.Text = "Enter your username and password.";
+                return;
+            }
+
+            char[] password = PasswordBuffer.CopyFrom(securePassword);
+            PasswordInput.Clear();
+            SetAuthenticationControlsEnabled(false);
+            AuthStatusText.Text = "Signing in…";
+            try
+            {
+                bool remember = RememberSessionCheckBox.IsChecked == true;
+                AuthenticationResult result = await Task.Run(() => authenticationService.Login(username, password, remember));
+                AuthStatusText.Text = result.Success ? string.Empty : GetAuthenticationError(result.Failure);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                AuthStatusText.Text = "The session could not be protected for this Windows user. Nothing was remembered.";
+            }
+            finally
+            {
+                PasswordBuffer.Clear(password);
+                PasswordInput.Clear();
+                SetAuthenticationControlsEnabled(true);
+                RefreshAuthenticationUi();
+            }
+        }
+
+        private void RememberSessionCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                authenticationService?.ForgetRememberedSession();
+            }
+            catch (IOException)
+            {
+                AuthStatusText.Text = "The remembered session could not be removed. Close other launcher instances and try again.";
+            }
+        }
+
+        private void LogoutButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                authenticationService.Logout();
+            }
+            catch (IOException)
+            {
+                AuthStatusText.Text = "The remembered session could not be removed. Close other launcher instances and try again.";
+                RefreshAuthenticationUi();
+                return;
+            }
+            UsernameTextBox.Clear();
+            PasswordInput.Clear();
+            RememberSessionCheckBox.IsChecked = false;
+            AuthStatusText.Text = "Signed out. Your remembered session was removed.";
+            RefreshAuthenticationUi();
+            UsernameTextBox.Focus();
+        }
+
+        private void RefreshAuthenticationUi()
+        {
+            bool signedIn = authenticationService.IsAuthenticated;
+            GuestAccountHeader.Visibility = signedIn ? Visibility.Collapsed : Visibility.Visible;
+            SignedInAccountHeader.Visibility = signedIn ? Visibility.Visible : Visibility.Collapsed;
+            AuthenticationPanel.Visibility = signedIn ? Visibility.Collapsed : Visibility.Visible;
+            SignedInUsernameText.Text = signedIn ? authenticationService.CurrentUsername : string.Empty;
+            ApplyPlayAuthenticationState();
+        }
+
+        private void ApplyPlayAuthenticationState()
+        {
+            if (Status == LauncherStatus.Ready)
+                PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY FFReSTART" : "SIGN IN TO PLAY";
+            else if (Status == LauncherStatus.OfflineReady)
+                PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY INSTALLED BUILD" : "SIGN IN TO PLAY";
+        }
+
+        private void SetAuthenticationControlsEnabled(bool enabled)
+        {
+            UsernameTextBox.IsEnabled = enabled;
+            PasswordInput.IsEnabled = enabled;
+            RememberSessionCheckBox.IsEnabled = enabled;
+            LoginButton.IsEnabled = enabled;
+            LoginButton.Content = enabled ? "SIGN _IN" : "SIGNING IN…";
+        }
+
+        private static string GetAuthenticationError(AuthenticationFailure failure) => failure switch
+        {
+            AuthenticationFailure.InvalidCredentials => "That username or password was not accepted.",
+            AuthenticationFailure.AccountStoreUnavailable => "No local game account was found. Open the game and create an account first.",
+            AuthenticationFailure.AccountStoreInvalid => "The local account database could not be read. Open the game to repair it.",
+            _ => "Your session is no longer valid. Please sign in again."
+        };
+
+        private void GameLocationButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select the FFReStart game executable",
+                Filter = "Windows applications (*.exe)|*.exe",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            string? current = gameExecutableLocator.Find(launcherSettings.GameExecutablePath);
+            if (!string.IsNullOrEmpty(current))
+            {
+                dialog.InitialDirectory = Path.GetDirectoryName(current);
+                dialog.FileName = Path.GetFileName(current);
+            }
+
+            if (dialog.ShowDialog(this) != true) return;
+            if (!GameExecutableLocator.IsUsableGameExecutable(dialog.FileName))
+            {
+                AuthStatusText.Text = "Select the main FFReStart game executable, not a launcher or crash handler.";
+                return;
+            }
+
+            launcherSettings.GameExecutablePath = Path.GetFullPath(dialog.FileName);
+            try
+            {
+                launcherSettingsStore.Save(launcherSettings);
+                RefreshGameLocationText();
+                AuthStatusText.Text = "Game location updated.";
+                if (Status == LauncherStatus.Failed)
+                    Status = LauncherStatus.OfflineReady;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                launcherSettings = new LauncherSettings();
+                AuthStatusText.Text = "The game location could not be stored securely, so it was not remembered.";
+            }
+        }
+
+        private void RefreshGameLocationText()
+        {
+            string displayPath = gameExecutableLocator.Find(launcherSettings.GameExecutablePath) ?? rootPath;
+            InstallPathText.Text = displayPath;
+            InstallPathText.ToolTip = displayPath;
         }
 
         private void DiscordButton_Click(object sender, RoutedEventArgs e) =>
@@ -319,9 +564,9 @@ namespace GameLauncher
                 Directory.CreateDirectory(rootPath);
                 Process.Start(new ProcessStartInfo(rootPath) { UseShellExecute = true });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ShowFailure("Windows couldn't open the game files folder.", ex);
+                ShowFailure("Windows couldn't open the game files folder.");
             }
         }
 
@@ -331,9 +576,9 @@ namespace GameLauncher
             {
                 Process.Start(LauncherLinks.CreateStartInfo(destination));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ShowFailure($"Windows couldn't open the {destinationName} in your default browser.", ex);
+                ShowFailure($"Windows couldn't open the {destinationName} in your default browser.");
             }
         }
 
@@ -366,7 +611,8 @@ namespace GameLauncher
                         continue;
                     }
 
-                    string destinationFolder = Path.GetDirectoryName(destinationPath);
+                    string destinationFolder = Path.GetDirectoryName(destinationPath)
+                        ?? throw new IOException("A game archive entry has no destination directory.");
                     if (!Directory.Exists(destinationFolder)) Directory.CreateDirectory(destinationFolder);
                     if (File.Exists(destinationPath) && IsSameFile(entry, destinationPath)) continue;
                     ExtractEntryToFile(entry, destinationPath);

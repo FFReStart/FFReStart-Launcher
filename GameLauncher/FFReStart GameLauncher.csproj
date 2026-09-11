@@ -3,6 +3,8 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
     <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
     <PackageIcon>ReStartTransparentLogo.png</PackageIcon>
     <PackageOutputPath>$(OutputPath)</PackageOutputPath>
     <BaseOutputPath>\GameLauncher</BaseOutputPath>
@@ -23,6 +25,9 @@
     <Resource Include="images\newloginbackground.png" />
     <Resource Include="images\ReStartTransparentLogo.ico" />
     <Resource Include="images\ReStartTransparentLogo.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <None Update="images\ReStartTransparentLogo.png">
