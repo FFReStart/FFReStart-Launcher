@@ -30,6 +30,7 @@ namespace GameLauncher
 
         private const string VersionUrl = "https://github.com/FFReStart/FFReStart_Builds/releases/latest/download/version.txt";
         private const string GameZipUrl = "https://github.com/FFReStart/FFReStart_Builds/releases/latest/download/FFReStart-Dev-Build.zip";
+        private const string ApplicationFolderName = "FFReStart";
 
         private LauncherStatus _status;
 
@@ -65,7 +66,12 @@ namespace GameLauncher
         {
             InitializeComponent();
 
-            rootPath = Directory.GetCurrentDirectory();
+            rootPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                ApplicationFolderName
+            );
+
+            Directory.CreateDirectory(rootPath);
 
             versionFile = Path.Combine(rootPath, "Version.txt");
             gameZip = Path.Combine(rootPath, "FFReStart-Dev-Build.zip");
