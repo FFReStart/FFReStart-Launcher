@@ -1,33 +1,157 @@
-﻿<Window x:Class="GameLauncher.MainWindow"
+<Window x:Class="GameLauncher.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:GameLauncher"
-        mc:Ignorable="d"
-        WindowStartupLocation="CenterScreen"
-        ContentRendered="Window_ContentRendered"
-        Title="FF-ReStart Launcher" Height="576" Width="1080">
-    <Grid>
-        <Image Stretch="UniformToFill" Source="images/newloginbackground.png"/>
-        <Image Margin="218,-42,218,-42" Source="/images/ReStartTransparentLogo.png" Stretch="Fill" RenderTransformOrigin="0.5,0.5" Opacity="0.5">
-            <Image.RenderTransform>
-                <TransformGroup>
-                    <ScaleTransform/>
-                    <SkewTransform/>
-                    <RotateTransform Angle="0"/>
-                    <TranslateTransform/>
-                </TransformGroup>
-            </Image.RenderTransform>
-        </Image>
-        <Image Margin="214,-21,214,-21" Source="/images/FFReStartMenuBG.png" Stretch="Fill"/>
-        <TextBlock Name="VersionText" VerticalAlignment="Bottom" HorizontalAlignment="Right" FontSize="20" Foreground="White" Margin="0, 0, 5, 0"/>
-        <Button Name="PlayButton" Content="Checking For Updates" Click="PlayButton_Click" Height="60" FontSize="28" FontWeight="Bold" Foreground="#DDFFFFFF" Margin="0,448,0,0" VerticalAlignment="Top" HorizontalAlignment="Center" MinWidth="150" Padding="10,1,10,1" FontFamily="ROG Fonts">
-            <Button.Background>
-                <ImageBrush ImageSource="/images/button_0.png"/>
-            </Button.Background>
-        </Button>
+        xmlns:automation="clr-namespace:System.Windows.Automation;assembly=PresentationCore"
+        mc:Ignorable="d" Title="FFReStart Launcher" Width="1100" Height="680"
+        MinWidth="880" MinHeight="620" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource VoidBrush}" ContentRendered="Window_ContentRendered" Closed="Window_Closed">
+    <Grid ClipToBounds="True">
+        <Image Source="images/newloginbackground.png" Stretch="UniformToFill" Opacity="0.92"/>
+        <Rectangle>
+            <Rectangle.Fill>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                    <GradientStop Color="#10051220" Offset="0"/>
+                    <GradientStop Color="#BB06111D" Offset="0.53"/>
+                    <GradientStop Color="#F706111D" Offset="1"/>
+                </LinearGradientBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+        <Canvas IsHitTestVisible="False" Opacity="0.7">
+            <Polyline Points="0,88 235,88 257,110 470,110" Stroke="{StaticResource CyanBrush}" StrokeThickness="1"/>
+            <Polyline Points="1100,544 910,544 888,522 720,522" Stroke="{StaticResource NanoGreenBrush}" StrokeThickness="1"/>
+            <Rectangle Canvas.Left="24" Canvas.Top="105" Width="6" Height="42" Fill="{StaticResource NanoGreenBrush}"/>
+        </Canvas>
 
+        <Grid Margin="40,30,40,32">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image Source="images/ReStartTransparentLogo.png" Width="72" Height="72" Stretch="Uniform"
+                           automation:AutomationProperties.Name="FFReStart logo"/>
+                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="FFReSTART" FontFamily="{StaticResource DisplayFont}" FontSize="30"
+                                   FontWeight="Bold"/>
+                        <TextBlock Text="FUSIONFALL COMMUNITY LAUNCHER" FontFamily="{StaticResource DisplayFont}"
+                                   Foreground="{StaticResource CyanBrush}" FontSize="12" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </StackPanel>
+                <!-- Stable extension point for the independent launcher-auth work. -->
+                <ContentControl x:Name="AccountStatusHost" Grid.Column="1" VerticalAlignment="Center"
+                                automation:AutomationProperties.Name="Player account status">
+                    <Border Background="#B8102636" BorderBrush="#624FA3B8" BorderThickness="1" CornerRadius="8" Padding="13,9">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="28" Height="28" Background="#2431D8FF" CornerRadius="14" Margin="0,0,9,0">
+                                <TextBlock Text="◎" Foreground="{StaticResource CyanBrush}" FontSize="17"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel>
+                                <TextBlock x:Name="AccountDisplayNameText" Text="GUEST PILOT" FontFamily="{StaticResource DisplayFont}"
+                                           FontSize="13" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="AccountStateText" Text="Playing locally" Foreground="{StaticResource MutedTextBrush}" FontSize="11"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </ContentControl>
+            </Grid>
 
+            <Grid Grid.Row="1" Margin="0,22,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.18*" MinWidth="390"/><ColumnDefinition Width="34"/>
+                    <ColumnDefinition Width="0.82*" MinWidth="340"/>
+                </Grid.ColumnDefinitions>
+                <Grid Grid.Column="0">
+                    <Image Source="images/FFReStartMenuBG.png" Stretch="Uniform" HorizontalAlignment="Center"
+                           VerticalAlignment="Bottom" MaxHeight="515" Opacity="0.9"
+                           automation:AutomationProperties.Name="FusionFall heroes"/>
+                    <StackPanel VerticalAlignment="Top" Margin="4,22,60,0">
+                        <Border Background="{StaticResource NanoGreenBrush}" CornerRadius="3" Padding="9,4" HorizontalAlignment="Left">
+                            <TextBlock Text="WELCOME BACK, HERO" Foreground="#FF071408" FontFamily="{StaticResource DisplayFont}"
+                                       FontWeight="Bold" FontSize="12"/>
+                        </Border>
+                        <TextBlock Margin="0,12,0,0" Text="THE FIGHT FOR THE FUTURE STARTS HERE"
+                                   FontFamily="{StaticResource DisplayFont}" FontWeight="Bold" FontSize="30" LineHeight="31"
+                                   TextWrapping="Wrap" MaxWidth="390" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Column="2" Background="{StaticResource PanelBrush}" BorderBrush="#6C4BA7BA"
+                        BorderThickness="1" CornerRadius="12" Padding="25,23" VerticalAlignment="Center">
+                    <Border.Effect><DropShadowEffect Color="#FF000000" BlurRadius="28" ShadowDepth="8" Opacity="0.5"/></Border.Effect>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" LastChildFill="False">
+                            <StackPanel DockPanel.Dock="Left">
+                                <TextBlock Text="MISSION CONTROL" FontFamily="{StaticResource DisplayFont}" FontSize="12"
+                                           Foreground="{StaticResource CyanBrush}" FontWeight="SemiBold"/>
+                                <TextBlock Text="GAME STATUS" FontFamily="{StaticResource DisplayFont}" FontSize="25" FontWeight="Bold" Margin="0,2,0,0"/>
+                            </StackPanel>
+                            <Border DockPanel.Dock="Right" Background="#1F65F43D" BorderBrush="#5565F43D"
+                                    BorderThickness="1" CornerRadius="5" Padding="8,4" VerticalAlignment="Top">
+                                <TextBlock x:Name="VersionText" Text="—" Foreground="{StaticResource NanoGreenBrush}"
+                                           FontFamily="Consolas" FontSize="11" FontWeight="Bold"
+                                           automation:AutomationProperties.Name="Installed game version"/>
+                            </Border>
+                        </DockPanel>
+                        <Border Grid.Row="1" Margin="0,18,0,0" Background="{StaticResource PanelRaisedBrush}"
+                                BorderBrush="#304EA4B8" BorderThickness="1" CornerRadius="8" Padding="15,13">
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <Ellipse x:Name="StatusDot" Width="10" Height="10" Fill="{StaticResource CyanBrush}" Margin="0,4,12,0" VerticalAlignment="Top"/>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock x:Name="StatusTitleText" Text="CHECKING GAME FILES" FontFamily="{StaticResource DisplayFont}"
+                                               FontWeight="Bold" FontSize="15" automation:AutomationProperties.LiveSetting="Polite"/>
+                                    <TextBlock x:Name="StatusDetailText" Text="Contacting the update service…"
+                                               Foreground="{StaticResource MutedTextBrush}" FontSize="12" TextWrapping="Wrap"
+                                               Margin="0,3,0,0" MinHeight="32" automation:AutomationProperties.LiveSetting="Polite"/>
+                                    <ProgressBar x:Name="DownloadProgress" Height="6" Margin="0,11,0,0" Minimum="0" Maximum="100"
+                                                 Visibility="Collapsed" Foreground="{StaticResource NanoGreenBrush}" Background="#FF07111A"
+                                                 BorderThickness="0" automation:AutomationProperties.Name="Download progress"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Button x:Name="PlayButton" Grid.Row="2" Margin="0,17,0,0" Content="CHECKING…"
+                                Style="{StaticResource PrimaryButtonStyle}" Click="PlayButton_Click" IsEnabled="False"
+                                IsDefault="True" MinHeight="62"
+                                automation:AutomationProperties.HelpText="Launch the installed game or retry a failed update"/>
+                        <Grid Grid.Row="3" Margin="0,11,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="8"/><ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="0" Content="_DISCORD" Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="DiscordButton_Click" ToolTip="Open the FFReStart community Discord in your browser"
+                                    automation:AutomationProperties.Name="Join FFReStart community Discord"/>
+                            <Button Grid.Column="2" Content="_SUPPORT" Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="SupportButton_Click" ToolTip="Open the FFReStart support Discord in your browser"
+                                    automation:AutomationProperties.Name="Open FFReStart support"/>
+                            <Button Grid.Column="4" Content="GAME _FILES" Style="{StaticResource SecondaryButtonStyle}"
+                                    Click="GameFilesButton_Click" ToolTip="Open the local FFReStart installation folder"
+                                    automation:AutomationProperties.Name="Open installed game files"/>
+                        </Grid>
+                        <Border Grid.Row="4" Height="1" Background="#354EA4B8" Margin="0,20,0,14"/>
+                        <Grid Grid.Row="5">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="INSTALL LOCATION" Foreground="{StaticResource MutedTextBrush}"
+                                           FontFamily="{StaticResource DisplayFont}" FontSize="10"/>
+                                <TextBlock x:Name="InstallPathText" TextTrimming="CharacterEllipsis" FontSize="11"
+                                           Foreground="#FFD4E1E8" Margin="0,3,12,0"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="SECURE UPDATE" Foreground="{StaticResource NanoGreenBrush}"
+                                       FontFamily="{StaticResource DisplayFont}" FontSize="10" VerticalAlignment="Bottom"/>
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
     </Grid>
 </Window>

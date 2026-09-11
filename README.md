@@ -17,3 +17,21 @@ GitHub Actions will build a self-contained, single-file Windows x64 executable a
 ## Game data location
 
 The launcher installs and updates the game under `%LOCALAPPDATA%\FFReStart`. This directory also contains `Version.txt` and any temporary game download.
+
+## Launcher UI conventions
+
+The WPF UI uses a small resource-driven visual system in `GameLauncher/App.xaml`: deep navy surfaces, cyan information accents, and green primary/action states. Keep the Play/Install/Update action dominant and reserve the secondary action row for real destinations and utilities.
+
+`AccountStatusHost` in `MainWindow.xaml` is the merge point for account/auth work. Auth changes can replace its content while retaining the header layout; the default guest state is intentionally informative rather than interactive.
+
+Community and Support are separate destinations exposed through `LauncherLinks.GetUrl`. Both open through Windows' safe default-browser shell behavior. Run the focused contract checks with:
+
+```powershell
+dotnet run --project GameLauncher.ContractTests/GameLauncher.ContractTests.csproj
+```
+
+For UI-only local review without contacting the update service or launching the game:
+
+```powershell
+dotnet run --project "GameLauncher/FFReStart GameLauncher.csproj" -- --preview
+```
