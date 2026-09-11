@@ -41,7 +41,32 @@
                                    Foreground="{StaticResource CyanBrush}" FontSize="12" FontWeight="SemiBold"/>
                     </StackPanel>
                 </StackPanel>
-                <ContentControl x:Name="AccountStatusHost" Grid.Column="1" VerticalAlignment="Center"
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border x:Name="MusicControlPanel" Background="#B8102636" BorderBrush="#624FA3B8"
+                            BorderThickness="1" CornerRadius="8" Padding="11,7" Margin="0,0,10,0"
+                            automation:AutomationProperties.Name="Launcher music controls">
+                        <StackPanel>
+                            <DockPanel LastChildFill="False" Margin="1,0,1,5">
+                                <TextBlock Text="MUSIC" FontFamily="{StaticResource DisplayFont}" FontSize="10"
+                                           Foreground="{StaticResource CyanBrush}" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="MusicVolumeText" DockPanel.Dock="Right" Text="35%"
+                                           Foreground="{StaticResource MutedTextBrush}" FontFamily="Consolas" FontSize="10"/>
+                            </DockPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Button x:Name="MuteMusicButton" Content="_MUTE" Click="MuteMusicButton_Click"
+                                        Style="{StaticResource SecondaryButtonStyle}" Padding="8,5" FontSize="10"
+                                        Margin="0,0,9,0" ToolTip="Mute launcher music"
+                                        automation:AutomationProperties.Name="Mute launcher music"/>
+                                <Slider x:Name="MusicVolumeSlider" Width="92" Minimum="0" Maximum="100"
+                                        TickFrequency="5" IsMoveToPointEnabled="True" VerticalAlignment="Center"
+                                        Foreground="{StaticResource CyanBrush}" ValueChanged="MusicVolumeSlider_ValueChanged"
+                                        ToolTip="Launcher music volume" FocusVisualStyle="{StaticResource LauncherFocusVisual}"
+                                        automation:AutomationProperties.Name="Launcher music volume"
+                                        automation:AutomationProperties.HelpText="Use the arrow keys to adjust launcher music volume"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <ContentControl x:Name="AccountStatusHost" VerticalAlignment="Center"
                                 automation:AutomationProperties.Name="Player account status">
                     <Border Background="#B8102636" BorderBrush="#624FA3B8" BorderThickness="1" CornerRadius="8" Padding="13,9">
                         <Grid>
@@ -69,7 +94,8 @@
                             </StackPanel>
                         </Grid>
                     </Border>
-                </ContentControl>
+                    </ContentControl>
+                </StackPanel>
             </Grid>
 
             <Grid Grid.Row="1" Margin="0,22,0,0">
@@ -179,15 +205,21 @@
                         <Grid Grid.Row="5">
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                             <StackPanel>
-                                <TextBlock Text="INSTALL LOCATION" Foreground="{StaticResource MutedTextBrush}"
+                                <TextBlock Text="INSTALL FOLDER" Foreground="{StaticResource MutedTextBrush}"
                                            FontFamily="{StaticResource DisplayFont}" FontSize="10"/>
                                 <TextBlock x:Name="InstallPathText" TextTrimming="CharacterEllipsis" FontSize="11"
                                            Foreground="#FFD4E1E8" Margin="0,3,12,0"/>
                             </StackPanel>
-                            <Button Grid.Column="1" Content="CHANGE" Click="GameLocationButton_Click"
-                                    Style="{StaticResource SecondaryButtonStyle}" Padding="8,5" FontSize="10"
-                                    ToolTip="Choose the FFReStart game executable"
-                                    automation:AutomationProperties.Name="Change game executable location"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button x:Name="ResetInstallLocationButton" Content="DEFAULT" Click="ResetInstallLocationButton_Click"
+                                        Style="{StaticResource SecondaryButtonStyle}" Padding="8,5" FontSize="10" Margin="0,0,6,0"
+                                        ToolTip="Restore the LocalAppData install folder"
+                                        automation:AutomationProperties.Name="Restore default FFReStart install folder"/>
+                                <Button x:Name="InstallLocationButton" Content="CHANGE" Click="InstallLocationButton_Click"
+                                        Style="{StaticResource SecondaryButtonStyle}" Padding="8,5" FontSize="10"
+                                        ToolTip="Choose where FFReStart is installed and updated"
+                                        automation:AutomationProperties.Name="Change FFReStart install folder"/>
+                            </StackPanel>
                         </Grid>
                     </Grid>
                 </Border>

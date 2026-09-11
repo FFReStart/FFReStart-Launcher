@@ -212,15 +212,37 @@ public sealed class AuthenticationTests : IDisposable
     {
         Directory.CreateDirectory(temporaryDirectory);
         string path = Path.Combine(temporaryDirectory, "settings.dat");
-        string sensitivePath = @"C:\Users\representative-user\password-marker\token-marker\save-id-marker\FFReStart.exe";
+        string sensitivePath = @"C:\Users\representative-user\password-marker\token-marker\save-id-marker\FFReStart";
         var store = new LauncherSettingsStore(path, new DpapiDataProtector());
-        store.Save(new LauncherSettings { GameExecutablePath = sensitivePath });
+        store.Save(new LauncherSettings { InstallDirectory = sensitivePath, MusicVolume = 0.62, IsMusicMuted = true });
         string bytesAsText = Encoding.UTF8.GetString(File.ReadAllBytes(path));
         Assert.DoesNotContain("representative-user", bytesAsText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("password-marker", bytesAsText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("token-marker", bytesAsText, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("save-id-marker", bytesAsText, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(sensitivePath, store.Load().GameExecutablePath);
+        LauncherSettings loaded = store.Load();
+        Assert.Equal(sensitivePath, loaded.InstallDirectory);
+        Assert.Equal(0.62, loaded.MusicVolume);
+        Assert.True(loaded.IsMusicMuted);
+    }
+
+    [Theory]
+    [InlineData(-0.5, 0.0)]
+    [InlineData(0.42, 0.42)]
+    [InlineData(2.0, 1.0)]
+    [InlineData(double.NaN, LauncherAudioPreferences.DefaultVolume)]
+    [InlineData(double.PositiveInfinity, LauncherAudioPreferences.DefaultVolume)]
+    public void MusicVolumeIsNormalizedToAPlayableRange(double input, double expected) =>
+        Assert.Equal(expected, LauncherAudioPreferences.NormalizeVolume(input));
+
+    [Fact]
+    public void OriginalLoginThemeIsEmbeddedForSingleFilePublishing()
+    {
+        using Stream? track = typeof(LauncherSettings).Assembly
+            .GetManifestResourceStream("GameLauncher.Audio.LauncherMainTheme.mp3");
+
+        Assert.NotNull(track);
+        Assert.True(track.Length > 1_000_000);
     }
 
     private LauncherAuthenticationService CreateService(string accountPath, string statePath) =>

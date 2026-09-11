@@ -60,5 +60,14 @@ public sealed class LauncherSettingsStore
 public sealed class LauncherSettings
 {
     public int Version { get; set; } = 1;
+
+    public string? InstallDirectory { get; set; }
+
+    public double MusicVolume { get; set; } = LauncherAudioPreferences.DefaultVolume;
+
+    public bool IsMusicMuted { get; set; }
+
+    // Retained so settings written by the first auth-enabled launcher can be
+    // migrated to an install root instead of silently forgetting the user's game.
     public string? GameExecutablePath { get; set; }
 }

@@ -25,6 +25,7 @@
     <Resource Include="images\newloginbackground.png" />
     <Resource Include="images\ReStartTransparentLogo.ico" />
     <Resource Include="images\ReStartTransparentLogo.png" />
+    <EmbeddedResource Include="audio\launcher-main-theme.mp3" LogicalName="GameLauncher.Audio.LauncherMainTheme.mp3" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />

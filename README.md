@@ -16,7 +16,17 @@ GitHub Actions will build a self-contained, single-file Windows x64 executable a
 
 ## Game data location
 
-The launcher installs and updates the game under `%LOCALAPPDATA%\FFReStart`. This directory also contains `Version.txt` and any temporary game download.
+The default game install folder is `%LOCALAPPDATA%\FFReStart`. Players can use **Change** beside **Install Folder** to choose another writable folder. The selected folder owns the downloaded archive, extracted build, and `Version.txt`; update checks, repair/install, launch discovery, offline launch, and **Game Files** all follow that selection.
+
+Changing the folder does not move or delete an existing installation. The launcher checks the selected destination and installs there if needed, leaving the previous folder untouched so the player can remove it after verifying the new install. Launcher settings and remembered-session data remain under `%LOCALAPPDATA%\FFReStart\Launcher` regardless of the game location.
+
+Settings from the earlier executable-picker implementation are migrated by inferring the install root from the saved game executable. Missing or invalid legacy paths safely fall back to the LocalAppData default.
+
+## Launcher music
+
+The header keeps launcher music controls visible without competing with the primary Play action. Players can adjust volume with the slider (including arrow-key input) or use the separate Mute toggle. Both preferences persist in the protected launcher settings under `%LOCALAPPDATA%\FFReStart\Launcher`.
+
+The looping launcher track is the original `MenuScreen` theme from the FFReStart game project: `Legacy -Main Theme- by Panman14.ogg` (Unity asset GUID `5f1672567e1e4fd499d7b79cc004b429`). The checked-in MP3 is a Windows-compatible transcode of that source and is embedded into the launcher executable; maintainers should update it only from the project-owned source asset.
 
 ## Launcher UI conventions
 

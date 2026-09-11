@@ -16,7 +16,10 @@ public sealed class GameExecutableLocator
             return Path.GetFullPath(configuredPath!);
         }
 
-        string expected = Path.Combine(installRoot, "FFReStart-Dev-Build", "FFReStart-Dev-Build.exe");
+        string expected = Path.Combine(
+            installRoot,
+            GameInstallLocation.BuildDirectoryName,
+            GameInstallLocation.GameExecutableName);
         if (IsUsableGameExecutable(expected))
         {
             return expected;

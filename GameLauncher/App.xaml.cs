@@ -5,6 +5,8 @@ using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 
 namespace GameLauncher
 {
@@ -13,5 +15,15 @@ namespace GameLauncher
     /// </summary>
     public partial class App : Application
     {
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            if (Array.Exists(e.Args, argument =>
+                string.Equals(argument, "--preview", StringComparison.OrdinalIgnoreCase)))
+            {
+                RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
+            }
+
+            base.OnStartup(e);
+        }
     }
 }

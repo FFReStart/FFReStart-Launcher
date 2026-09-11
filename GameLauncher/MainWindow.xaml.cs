@@ -7,8 +7,10 @@ using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using GameLauncher.Authentication;
 using Microsoft.Win32;
 
@@ -49,14 +51,16 @@ namespace GameLauncher
 
     public partial class MainWindow : Window
     {
-        private readonly string rootPath;
-        private readonly string versionFile;
-        private readonly string gameZip;
+        private readonly string defaultInstallRoot;
         private readonly string settingsFolder;
         private readonly LauncherSettingsStore launcherSettingsStore;
-        private readonly GameExecutableLocator gameExecutableLocator;
         private readonly LauncherAuthenticationService authenticationService;
         private LauncherSettings launcherSettings;
+        private GameInstallLocation installLocation;
+        private GameExecutableLocator gameExecutableLocator;
+        private LauncherMusicPlayer? musicPlayer;
+        private readonly DispatcherTimer audioSettingsSaveTimer;
+        private bool audioUiReady;
         private static readonly HttpClient HttpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
         private readonly CancellationTokenSource shutdown = new CancellationTokenSource();
         private LauncherStatus status;
@@ -79,15 +83,16 @@ namespace GameLauncher
         {
             InitializeComponent();
 
-            rootPath = Path.Combine(
+            audioSettingsSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+            audioSettingsSaveTimer.Tick += AudioSettingsSaveTimer_Tick;
+
+            defaultInstallRoot = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 ApplicationFolderName
             );
-            Directory.CreateDirectory(rootPath);
+            Directory.CreateDirectory(defaultInstallRoot);
 
-            versionFile = Path.Combine(rootPath, "Version.txt");
-            gameZip = Path.Combine(rootPath, "FFReStart-Dev-Build.zip");
-            settingsFolder = Path.Combine(rootPath, "Launcher");
+            settingsFolder = Path.Combine(defaultInstallRoot, "Launcher");
             var dataProtector = new DpapiDataProtector();
             launcherSettingsStore = new LauncherSettingsStore(Path.Combine(settingsFolder, "settings.dat"), dataProtector);
             try
@@ -99,7 +104,13 @@ namespace GameLauncher
                 launcherSettings = new LauncherSettings();
                 AuthStatusText.Text = "Protected launcher settings could not be recovered. Defaults are in use.";
             }
-            gameExecutableLocator = new GameExecutableLocator(rootPath);
+            InitializeLauncherMusic();
+            installLocation = GameInstallLocation.FromSettings(
+                defaultInstallRoot,
+                launcherSettings.InstallDirectory,
+                launcherSettings.GameExecutablePath);
+            gameExecutableLocator = new GameExecutableLocator(installLocation.RootDirectory);
+            MigrateLegacyInstallSetting();
             string sessionPath = Path.Combine(settingsFolder, "auth-session.dat");
             bool hadRememberedSession = File.Exists(sessionPath);
             authenticationService = new LauncherAuthenticationService(
@@ -142,6 +153,8 @@ namespace GameLauncher
                 Status = LauncherStatus.Ready;
                 StatusDetailText.Text = "Preview mode — network and game launch are disabled.";
                 PlayButton.IsEnabled = false;
+                InstallLocationButton.IsEnabled = false;
+                ResetInstallLocationButton.IsEnabled = false;
                 return;
             }
 
@@ -150,9 +163,106 @@ namespace GameLauncher
 
         private void Window_Closed(object sender, EventArgs e)
         {
+            if (audioSettingsSaveTimer.IsEnabled)
+            {
+                audioSettingsSaveTimer.Stop();
+                SaveAudioPreferences();
+            }
+            musicPlayer?.Dispose();
             shutdown.Cancel();
             shutdown.Dispose();
             authenticationService.Dispose();
+        }
+
+        private void InitializeLauncherMusic()
+        {
+            double volume = LauncherAudioPreferences.NormalizeVolume(launcherSettings.MusicVolume);
+            launcherSettings.MusicVolume = volume;
+            MusicVolumeSlider.Value = volume * 100d;
+            UpdateMusicControls();
+
+            try
+            {
+                musicPlayer = new LauncherMusicPlayer(settingsFolder)
+                {
+                    Volume = volume,
+                    IsMuted = launcherSettings.IsMusicMuted
+                };
+                musicPlayer.PlaybackFailed += MusicPlayer_PlaybackFailed;
+                musicPlayer.Play();
+                audioUiReady = true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+            {
+                DisableMusicControls("Launcher music is unavailable on this device.");
+            }
+        }
+
+        private void MusicVolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            if (!audioUiReady) return;
+
+            launcherSettings.MusicVolume = LauncherAudioPreferences.NormalizeVolume(e.NewValue / 100d);
+            if (musicPlayer is not null) musicPlayer.Volume = launcherSettings.MusicVolume;
+            UpdateMusicControls();
+            ScheduleAudioPreferencesSave();
+        }
+
+        private void MuteMusicButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!audioUiReady) return;
+
+            launcherSettings.IsMusicMuted = !launcherSettings.IsMusicMuted;
+            if (musicPlayer is not null) musicPlayer.IsMuted = launcherSettings.IsMusicMuted;
+            UpdateMusicControls();
+            ScheduleAudioPreferencesSave();
+        }
+
+        private void UpdateMusicControls()
+        {
+            int percentage = (int)Math.Round(LauncherAudioPreferences.NormalizeVolume(launcherSettings.MusicVolume) * 100d);
+            MusicVolumeText.Text = $"{percentage}%";
+            MuteMusicButton.Content = launcherSettings.IsMusicMuted ? "_UNMUTE" : "_MUTE";
+            string accessibleName = launcherSettings.IsMusicMuted ? "Unmute launcher music" : "Mute launcher music";
+            AutomationProperties.SetName(MuteMusicButton, accessibleName);
+            MuteMusicButton.ToolTip = accessibleName;
+        }
+
+        private void ScheduleAudioPreferencesSave()
+        {
+            audioSettingsSaveTimer.Stop();
+            audioSettingsSaveTimer.Start();
+        }
+
+        private void AudioSettingsSaveTimer_Tick(object? sender, EventArgs e)
+        {
+            audioSettingsSaveTimer.Stop();
+            SaveAudioPreferences();
+        }
+
+        private void SaveAudioPreferences()
+        {
+            try
+            {
+                launcherSettingsStore.Save(launcherSettings);
+                MusicControlPanel.ToolTip = null;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                MusicControlPanel.ToolTip = "The music preference could not be saved. It will remain active until the launcher closes.";
+            }
+        }
+
+        private void MusicPlayer_PlaybackFailed(object? sender, ExceptionEventArgs e) =>
+            DisableMusicControls("Launcher music could not be played on this device.");
+
+        private void DisableMusicControls(string message)
+        {
+            audioUiReady = false;
+            MusicVolumeSlider.IsEnabled = false;
+            MuteMusicButton.IsEnabled = false;
+            MusicControlPanel.ToolTip = message;
+            AutomationProperties.SetHelpText(MusicControlPanel, message);
         }
 
         private void ApplyStatusPresentation(LauncherStatus currentStatus)
@@ -160,6 +270,8 @@ namespace GameLauncher
             DownloadProgress.Visibility = Visibility.Collapsed;
             DownloadProgress.IsIndeterminate = false;
             PlayButton.IsEnabled = false;
+            InstallLocationButton.IsEnabled = false;
+            ResetInstallLocationButton.IsEnabled = false;
 
             switch (currentStatus)
             {
@@ -176,6 +288,8 @@ namespace GameLauncher
                     StatusDot.Fill = FindBrush("NanoGreenBrush");
                     PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY FFReSTART" : "SIGN IN TO PLAY";
                     PlayButton.IsEnabled = true;
+                    InstallLocationButton.IsEnabled = true;
+                    ResetInstallLocationButton.IsEnabled = !IsUsingDefaultInstallLocation();
                     break;
 
                 case LauncherStatus.OfflineReady:
@@ -184,6 +298,8 @@ namespace GameLauncher
                     StatusDot.Fill = FindBrush("CyanBrush");
                     PlayButton.Content = authenticationService.IsAuthenticated ? "PLAY INSTALLED BUILD" : "SIGN IN TO PLAY";
                     PlayButton.IsEnabled = true;
+                    InstallLocationButton.IsEnabled = true;
+                    ResetInstallLocationButton.IsEnabled = !IsUsingDefaultInstallLocation();
                     break;
 
                 case LauncherStatus.Failed:
@@ -191,6 +307,8 @@ namespace GameLauncher
                     StatusDot.Fill = FindBrush("DangerBrush");
                     PlayButton.Content = "TRY AGAIN";
                     PlayButton.IsEnabled = true;
+                    InstallLocationButton.IsEnabled = true;
+                    ResetInstallLocationButton.IsEnabled = !IsUsingDefaultInstallLocation();
                     break;
 
                 case LauncherStatus.DownloadingGame:
@@ -224,17 +342,20 @@ namespace GameLauncher
             PlayButton.Content = buttonText;
         }
 
-        private async Task CheckForUpdatesAsync()
+        private async Task CheckForUpdatesAsync(string? checkingDetail = null)
         {
             Status = LauncherStatus.Checking;
+            if (!string.IsNullOrWhiteSpace(checkingDetail))
+                StatusDetailText.Text = checkingDetail;
 
             try
             {
                 LauncherVersion onlineVersion = await GetOnlineVersionAsync(shutdown.Token);
 
-                if (File.Exists(versionFile))
+                bool gameIsInstalled = gameExecutableLocator.Find(null) is not null;
+                if (File.Exists(installLocation.VersionFilePath) && gameIsInstalled)
                 {
-                    LauncherVersion localVersion = new LauncherVersion(File.ReadAllText(versionFile).Trim());
+                    LauncherVersion localVersion = new LauncherVersion(File.ReadAllText(installLocation.VersionFilePath).Trim());
                     VersionText.Text = $"v{localVersion}";
 
                     if (onlineVersion.IsDifferentThan(localVersion))
@@ -258,7 +379,7 @@ namespace GameLauncher
             }
             catch (Exception)
             {
-                if (gameExecutableLocator.Find(launcherSettings.GameExecutablePath) is not null)
+                if (gameExecutableLocator.Find(null) is not null)
                 {
                     Status = LauncherStatus.OfflineReady;
                 }
@@ -281,9 +402,11 @@ namespace GameLauncher
             {
                 Status = isUpdate ? LauncherStatus.DownloadingUpdate : LauncherStatus.DownloadingGame;
 
-                if (File.Exists(gameZip))
+                installLocation.EnsureWritable();
+
+                if (File.Exists(installLocation.DownloadArchivePath))
                 {
-                    File.Delete(gameZip);
+                    File.Delete(installLocation.DownloadArchivePath);
                 }
 
                 using HttpResponseMessage response = await HttpClient.GetAsync(
@@ -293,23 +416,33 @@ namespace GameLauncher
                 response.EnsureSuccessStatusCode();
 
                 long totalBytes = response.Content.Headers.ContentLength ?? -1;
-                using Stream input = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using FileStream output = new FileStream(gameZip, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
-                byte[] buffer = new byte[81920];
-                long receivedBytes = 0;
-                int bytesRead;
-
-                while ((bytesRead = await input.ReadAsync(buffer, cancellationToken)) > 0)
+                await using (Stream input = await response.Content.ReadAsStreamAsync(cancellationToken))
+                await using (FileStream output = new FileStream(
+                    installLocation.DownloadArchivePath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    81920,
+                    true))
                 {
-                    await output.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-                    receivedBytes += bytesRead;
-                    UpdateDownloadProgress(receivedBytes, totalBytes);
+                    byte[] buffer = new byte[81920];
+                    long receivedBytes = 0;
+                    int bytesRead;
+
+                    while ((bytesRead = await input.ReadAsync(buffer, cancellationToken)) > 0)
+                    {
+                        await output.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                        receivedBytes += bytesRead;
+                        UpdateDownloadProgress(receivedBytes, totalBytes);
+                    }
                 }
 
                 Status = LauncherStatus.Installing;
-                await Task.Run(() => ExtractZipToDirectorySkippingUnchangedFiles(gameZip, rootPath), cancellationToken);
-                File.Delete(gameZip);
-                File.WriteAllText(versionFile, onlineVersion.ToString());
+                await Task.Run(() => ExtractZipToDirectorySkippingUnchangedFiles(
+                    installLocation.DownloadArchivePath,
+                    installLocation.RootDirectory), cancellationToken);
+                File.Delete(installLocation.DownloadArchivePath);
+                File.WriteAllText(installLocation.VersionFilePath, onlineVersion.ToString());
 
                 VersionText.Text = $"v{onlineVersion}";
                 RefreshGameLocationText();
@@ -367,7 +500,7 @@ namespace GameLauncher
                     return;
                 }
 
-                string? gameExecutable = gameExecutableLocator.Find(launcherSettings.GameExecutablePath);
+                string? gameExecutable = gameExecutableLocator.Find(null);
                 if (string.IsNullOrEmpty(gameExecutable))
                 {
                     ShowFailure("The game executable is missing. Repair the installation or choose its location below.");
@@ -504,51 +637,106 @@ namespace GameLauncher
             _ => "Your session is no longer valid. Please sign in again."
         };
 
-        private void GameLocationButton_Click(object sender, RoutedEventArgs e)
+        private void ApplyInstallLocation(GameInstallLocation location)
         {
-            var dialog = new OpenFileDialog
-            {
-                Title = "Select the FFReStart game executable",
-                Filter = "Windows applications (*.exe)|*.exe",
-                CheckFileExists = true,
-                Multiselect = false
-            };
+            installLocation = location;
+            gameExecutableLocator = new GameExecutableLocator(location.RootDirectory);
+        }
 
-            string? current = gameExecutableLocator.Find(launcherSettings.GameExecutablePath);
-            if (!string.IsNullOrEmpty(current))
-            {
-                dialog.InitialDirectory = Path.GetDirectoryName(current);
-                dialog.FileName = Path.GetFileName(current);
-            }
+        private void MigrateLegacyInstallSetting()
+        {
+            bool needsMigration =
+                !string.Equals(launcherSettings.InstallDirectory, installLocation.RootDirectory, StringComparison.OrdinalIgnoreCase) ||
+                !string.IsNullOrWhiteSpace(launcherSettings.GameExecutablePath);
+            if (!needsMigration) return;
 
-            if (dialog.ShowDialog(this) != true) return;
-            if (!GameExecutableLocator.IsUsableGameExecutable(dialog.FileName))
-            {
-                AuthStatusText.Text = "Select the main FFReStart game executable, not a launcher or crash handler.";
-                return;
-            }
-
-            launcherSettings.GameExecutablePath = Path.GetFullPath(dialog.FileName);
+            launcherSettings.InstallDirectory = installLocation.RootDirectory;
+            launcherSettings.GameExecutablePath = null;
             try
             {
                 launcherSettingsStore.Save(launcherSettings);
-                RefreshGameLocationText();
-                AuthStatusText.Text = "Game location updated.";
-                if (Status == LauncherStatus.Failed)
-                    Status = LauncherStatus.OfflineReady;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
             {
-                launcherSettings = new LauncherSettings();
-                AuthStatusText.Text = "The game location could not be stored securely, so it was not remembered.";
+                AuthStatusText.Text = "The install folder setting could not be upgraded, so it may need to be selected again next time.";
             }
         }
 
+        private async void InstallLocationButton_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new OpenFolderDialog
+            {
+                Title = "Choose where FFReStart will be installed and updated",
+                InitialDirectory = installLocation.RootDirectory,
+                Multiselect = false
+            };
+
+            if (dialog.ShowDialog(this) != true) return;
+
+            GameInstallLocation candidate;
+            try
+            {
+                candidate = new GameInstallLocation(dialog.FolderName);
+                candidate.EnsureWritable();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                ShowFailure("That folder can't be used for game files. Choose a writable folder and try again.");
+                return;
+            }
+
+            await ActivateInstallLocationAsync(candidate);
+        }
+
+        private async void ResetInstallLocationButton_Click(object sender, RoutedEventArgs e)
+        {
+            var defaultLocation = new GameInstallLocation(defaultInstallRoot);
+            try
+            {
+                defaultLocation.EnsureWritable();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                ShowFailure("The default LocalAppData folder isn't writable right now. Check its permissions and try again.");
+                return;
+            }
+
+            await ActivateInstallLocationAsync(defaultLocation);
+        }
+
+        private async Task ActivateInstallLocationAsync(GameInstallLocation candidate)
+        {
+            if (string.Equals(candidate.RootDirectory, installLocation.RootDirectory, StringComparison.OrdinalIgnoreCase))
+                return;
+
+            string? previousInstallDirectory = launcherSettings.InstallDirectory;
+            string? previousExecutablePath = launcherSettings.GameExecutablePath;
+            launcherSettings.InstallDirectory = candidate.RootDirectory;
+            launcherSettings.GameExecutablePath = null;
+            try
+            {
+                launcherSettingsStore.Save(launcherSettings);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or CryptographicException or PlatformNotSupportedException)
+            {
+                launcherSettings.InstallDirectory = previousInstallDirectory;
+                launcherSettings.GameExecutablePath = previousExecutablePath;
+                ShowFailure("The install folder couldn't be saved securely, so the previous location is still active.");
+                return;
+            }
+
+            ApplyInstallLocation(candidate);
+            RefreshGameLocationText();
+            await CheckForUpdatesAsync("Checking the selected folder. Files in the previous folder were left untouched.");
+        }
+
+        private bool IsUsingDefaultInstallLocation() =>
+            string.Equals(installLocation.RootDirectory, defaultInstallRoot, StringComparison.OrdinalIgnoreCase);
+
         private void RefreshGameLocationText()
         {
-            string displayPath = gameExecutableLocator.Find(launcherSettings.GameExecutablePath) ?? rootPath;
-            InstallPathText.Text = displayPath;
-            InstallPathText.ToolTip = displayPath;
+            InstallPathText.Text = installLocation.RootDirectory;
+            InstallPathText.ToolTip = installLocation.RootDirectory;
         }
 
         private void DiscordButton_Click(object sender, RoutedEventArgs e) =>
@@ -561,8 +749,8 @@ namespace GameLauncher
         {
             try
             {
-                Directory.CreateDirectory(rootPath);
-                Process.Start(new ProcessStartInfo(rootPath) { UseShellExecute = true });
+                Directory.CreateDirectory(installLocation.RootDirectory);
+                Process.Start(new ProcessStartInfo(installLocation.RootDirectory) { UseShellExecute = true });
             }
             catch (Exception)
             {
