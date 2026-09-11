@@ -1,0 +1,55 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <PackageIcon>ReStartTransparentLogo.png</PackageIcon>
+    <PackageOutputPath>$(OutputPath)</PackageOutputPath>
+    <BaseOutputPath>\GameLauncher</BaseOutputPath>
+    <ApplicationIcon>images\ReStartTransparentLogo.ico</ApplicationIcon>
+    <StartupObject></StartupObject>
+    <PlatformTarget>x64</PlatformTarget>
+    <ProduceReferenceAssembly>True</ProduceReferenceAssembly>
+    <Title>FFReStart Launcher</Title>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <DebugType>portable</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="button_0.png" />
+    <None Remove="images\button_0.png" />
+    <None Remove="images\FFReStartMenuBG.png" />
+    <None Remove="images\Icon.ico" />
+    <None Remove="images\newloginbackground.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="images\button_0.png" />
+    <Resource Include="images\FFReStartMenuBG.png" />
+    <Resource Include="images\ReStartTransparentLogo.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="images\newloginbackground.png" />
+    <Resource Include="images\ReStartTransparentLogo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="images\ReStartTransparentLogo.png">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="bin\" />
+  </ItemGroup>
+
+</Project>
