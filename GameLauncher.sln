@@ -5,6 +5,8 @@ VisualStudioVersion = 17.9.34723.18
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FFReStart GameLauncher", "GameLauncher\FFReStart GameLauncher.csproj", "{7FA3FB14-7943-4E38-820E-77E2BA28283E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameLauncher.Tests", "GameLauncher.Tests\GameLauncher.Tests.csproj", "{1F5B2E22-4D2A-4980-8C50-2BEA16808F1B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{7FA3FB14-7943-4E38-820E-77E2BA28283E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7FA3FB14-7943-4E38-820E-77E2BA28283E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7FA3FB14-7943-4E38-820E-77E2BA28283E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1F5B2E22-4D2A-4980-8C50-2BEA16808F1B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1F5B2E22-4D2A-4980-8C50-2BEA16808F1B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1F5B2E22-4D2A-4980-8C50-2BEA16808F1B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1F5B2E22-4D2A-4980-8C50-2BEA16808F1B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

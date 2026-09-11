@@ -21,7 +21,40 @@
             </Image.RenderTransform>
         </Image>
         <Image Margin="214,-21,214,-21" Source="/images/FFReStartMenuBG.png" Stretch="Fill"/>
-        <TextBlock Name="VersionText" VerticalAlignment="Bottom" HorizontalAlignment="Right" FontSize="20" Foreground="White" Margin="0, 0, 5, 0"/>
+        <Border HorizontalAlignment="Right" VerticalAlignment="Top" Width="330" Margin="0,28,34,0"
+                Padding="18" CornerRadius="8" Background="#D9182630" BorderBrush="#885FC8E8" BorderThickness="1">
+            <Grid>
+                <StackPanel Name="LoginPanel">
+                    <TextBlock Text="PLAYER LOGIN" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                    <TextBlock Text="Use the same local account as the game." Margin="0,3,0,12" Foreground="#FFBAD7E4"/>
+                    <TextBox Name="UsernameTextBox" Height="32" Margin="0,0,0,8" Padding="8,5"
+                             ToolTip="Username" KeyDown="LoginField_KeyDown"/>
+                    <PasswordBox Name="PasswordInput" Height="32" Margin="0,0,0,8" Padding="8,5"
+                                 ToolTip="Password" KeyDown="LoginField_KeyDown"/>
+                    <CheckBox Name="RememberSessionCheckBox" Content="Remember Password"
+                              IsChecked="False" Unchecked="RememberSessionCheckBox_Unchecked"
+                              Foreground="White" Margin="0,0,0,3"/>
+                    <TextBlock Text="Stores a protected session, never your password." Foreground="#FFBAD7E4"
+                               FontSize="11" Margin="20,0,0,10"/>
+                    <StackPanel Orientation="Horizontal">
+                        <Button Name="LoginButton" Content="Sign In" Click="LoginButton_Click" Padding="16,6" Margin="0,0,8,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Name="SessionPanel" Visibility="Collapsed">
+                    <TextBlock Text="SIGNED IN" FontSize="16" FontWeight="Bold" Foreground="#FF75D9A6"/>
+                    <TextBlock Name="SignedInUsernameText" FontSize="22" FontWeight="SemiBold" Foreground="White" Margin="0,3,0,10"/>
+                    <Button Content="Sign Out" Click="LogoutButton_Click" HorizontalAlignment="Left" Padding="14,5"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TextBlock Name="AuthStatusText" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                   FontSize="14" Foreground="#FFFFD27D" Margin="20,0,20,82" TextAlignment="Center"/>
+        <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Left" Margin="10,0,0,8">
+            <Button Content="Game Location..." Click="GameLocationButton_Click" Padding="8,3" HorizontalAlignment="Left"/>
+            <TextBlock Name="GameLocationText" FontSize="11" Foreground="#FFCEE5EF" MaxWidth="620" TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <TextBlock Name="VersionText" VerticalAlignment="Bottom" HorizontalAlignment="Right" FontSize="20" Foreground="White" Margin="0,0,5,0"/>
         <Button Name="PlayButton" Content="Checking For Updates" Click="PlayButton_Click" Height="60" FontSize="28" FontWeight="Bold" Foreground="#DDFFFFFF" Margin="0,448,0,0" VerticalAlignment="Top" HorizontalAlignment="Center" MinWidth="150" Padding="10,1,10,1" FontFamily="ROG Fonts">
             <Button.Background>
                 <ImageBrush ImageSource="/images/button_0.png"/>

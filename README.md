@@ -17,3 +17,9 @@ GitHub Actions will build a self-contained, single-file Windows x64 executable a
 ## Game data location
 
 The launcher installs and updates the game under `%LOCALAPPDATA%\FFReStart`. This directory also contains `Version.txt` and any temporary game download.
+
+## Login and pre-authenticated launch
+
+Create a local account through the game once, then sign in from the launcher. Play starts the game with the shared `Game.exe --auth-token <token>` contract; the password is never sent to the game.
+
+“Remember Password” is opt-in and stores a revalidated derived session—not the password—in a Windows current-user DPAPI-protected blob. See [Launcher authentication](docs/authentication.md) for the token format, storage location, cleanup behavior, threat model, and integration details.
