@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package launch.v1;
+
+option go_package = "wails-spike/proto/launch/v1;launchv1";
+
+message LaunchHandoff {
+  string ticket = 1;
+  LaunchBootstrap bootstrap = 2;
+}
+
+message LaunchBootstrap {
+  string realm_id = 1;
+  string world_endpoint = 2;
+  string gns_ca_key_id = 3;
+  uint32 protocol_min = 4;
+  uint32 protocol_max = 5;
+  string content_version = 6;
+}

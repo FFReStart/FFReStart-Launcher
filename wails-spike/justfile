@@ -1,0 +1,10 @@
+set shell := ["powershell", "-NoProfile", "-Command"]
+
+test:
+    go test ./...
+
+build-windows:
+    wails build -platform windows/amd64 -clean
+
+generate-proto:
+    docker run --rm -v "${PWD}:/workspace" -w /workspace bufbuild/buf:1.57.0 generate

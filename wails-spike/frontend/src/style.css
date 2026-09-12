@@ -1,0 +1,20 @@
+@font-face { font-family: Nunito; src: url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2"); }
+:root { font-family: Nunito, "Segoe UI", sans-serif; color: #eef7ff; background: #071426; font-synthesis: none; }
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 720px; min-height: 520px; background: radial-gradient(circle at 15% 20%, #163d64, transparent 36%), linear-gradient(135deg, #071426, #101d32 65%, #24183b); }
+button { font: inherit; }
+.shell { min-height: 100vh; display: grid; grid-template-columns: 1.25fr .75fr; gap: 48px; align-items: center; padding: 72px; }
+.brand { max-width: 590px; }
+.eyebrow { color: #69d9ff; text-transform: uppercase; letter-spacing: .25em; font-weight: 700; }
+h1 { margin: 14px 0; font-size: clamp(54px, 7vw, 90px); line-height: .95; letter-spacing: -.045em; }
+.brand p { max-width: 500px; color: #b8cade; font-size: 18px; line-height: 1.55; }
+.panel { padding: 34px; border: 1px solid #53708e88; border-radius: 20px; background: #0d1b2ddd; box-shadow: 0 24px 70px #0008; }
+.panel > div { color: #9fd6b7; font-size: 14px; }
+.status-dot { display: inline-block; width: 9px; height: 9px; margin-right: 9px; border-radius: 50%; background: #64e89a; box-shadow: 0 0 13px #64e89a; }
+h2 { margin: 22px 0; font-size: 29px; }
+.panel button { width: 100%; border: 0; border-radius: 10px; padding: 13px 16px; margin-top: 11px; cursor: pointer; font-weight: 700; }
+.primary { color: #06131d; background: #69d9ff; }
+.secondary { color: #eaf6ff; background: #263a52; }
+.play { color: white; background: #7b4feb; }
+.play:disabled { opacity: .38; cursor: not-allowed; }
+#status { min-height: 42px; margin: 20px 2px 0; color: #9eb1c6; font-size: 14px; line-height: 1.5; }
