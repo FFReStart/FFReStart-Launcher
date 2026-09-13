@@ -37,6 +37,20 @@ func TestLauncherSettingsMigratesObsoleteGameSubfolder(t *testing.T) {
 	}
 }
 
+func TestLauncherSettingsMigratesAutoplayOffToMuted(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := &settingsStore{path: path}
+	data := []byte(`{"version":1,"installDirectory":"` + filepath.ToSlash(root) + `","musicVolume":0.35,"musicMuted":false,"autoplayMusic":false}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !store.Load(root).MusicMuted {
+		t.Fatal("autoplay-off setting was not migrated to muted")
+	}
+}
+
 func TestNormaliseMusicVolume(t *testing.T) {
 	if got := normaliseVolume(math.NaN()); got != defaultMusicVolume {
 		t.Fatalf("NaN = %v", got)

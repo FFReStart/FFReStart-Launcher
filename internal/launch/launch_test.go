@@ -13,6 +13,17 @@ import (
 
 type blockingChecker struct{ calls atomic.Int32 }
 
+type fakeProcess struct{ wait func() error }
+
+func (p fakeProcess) Wait() error { return p.wait() }
+
+func survivingProcess() Process {
+	return fakeProcess{wait: func() error {
+		time.Sleep(time.Second)
+		return nil
+	}}
+}
+
 func (c *blockingChecker) Check(ctx context.Context) error {
 	c.calls.Add(1)
 	<-ctx.Done()
@@ -22,7 +33,11 @@ func (c *blockingChecker) Check(ctx context.Context) error {
 func TestOfflineLaunchDoesNotWaitForUpdate(t *testing.T) {
 	checker := &blockingChecker{}
 	started := make(chan struct{}, 1)
-	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) error { started <- struct{}{}; return nil }), checker)
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+		started <- struct{}{}
+		return survivingProcess(), nil
+	}), checker)
+	svc.SetLaunchGrace(time.Millisecond)
 	svc.SetUpdateTimeout(time.Second)
 	begin := time.Now()
 	if err := svc.PlayOffline(context.Background()); err != nil {
@@ -40,7 +55,8 @@ func TestOfflineLaunchDoesNotWaitForUpdate(t *testing.T) {
 
 func TestOfflineLaunchChecksAtMostOnce(t *testing.T) {
 	checker := &blockingChecker{}
-	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) error { return nil }), checker)
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) { return survivingProcess(), nil }), checker)
+	svc.SetLaunchGrace(time.Millisecond)
 	svc.SetUpdateTimeout(20 * time.Millisecond)
 	for range 20 {
 		if err := svc.PlayOffline(context.Background()); err != nil {
@@ -56,7 +72,11 @@ func TestOfflineLaunchChecksAtMostOnce(t *testing.T) {
 func TestNetworkUnavailableAllowsTwentyOfTwentyLaunches(t *testing.T) {
 	var launches atomic.Int32
 	checker := UpdateCheckerFunc(func(context.Context) error { return errors.New("network unavailable") })
-	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) error { launches.Add(1); return nil }), checker)
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+		launches.Add(1)
+		return survivingProcess(), nil
+	}), checker)
+	svc.SetLaunchGrace(time.Millisecond)
 	for range 20 {
 		if err := svc.PlayOffline(context.Background()); err != nil {
 			t.Fatalf("offline launch failed: %v", err)
@@ -77,10 +97,11 @@ func (p installedGamePath) CurrentPath() (string, error) { return string(p), nil
 
 func TestOfflineLaunchUsesInstalledCurrentVersion(t *testing.T) {
 	var startedPath string
-	svc := NewService("", FuncStarter(func(_ context.Context, path string, _ ...string) error {
+	svc := NewService("", FuncStarter(func(_ context.Context, path string, _ ...string) (Process, error) {
 		startedPath = path
-		return nil
+		return survivingProcess(), nil
 	}), nil)
+	svc.SetLaunchGrace(time.Millisecond)
 	svc.SetInstalledGame(installedGamePath(filepath.Join("game", "versions", "2.0.0")), "bin/FFReStart.exe")
 	if err := svc.PlayOffline(context.Background()); err != nil {
 		t.Fatal(err)
@@ -92,7 +113,7 @@ func TestOfflineLaunchUsesInstalledCurrentVersion(t *testing.T) {
 }
 
 func TestDevelopmentPathOverridesInstalledVersion(t *testing.T) {
-	svc := NewService(filepath.Join("dev", "game.exe"), FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	svc := NewService(filepath.Join("dev", "game.exe"), FuncStarter(func(context.Context, string, ...string) (Process, error) { return survivingProcess(), nil }), nil)
 	svc.SetInstalledGame(installedGamePath(filepath.Join("game", "versions", "2.0.0")), "FFReStart.exe")
 	resolved, err := svc.ResolvedGamePath()
 	if err != nil {
@@ -121,7 +142,7 @@ func TestInstalledGameDiscoversPreferredExecutable(t *testing.T) {
 			t.Fatal(err)
 		}
 	} // #nosec G302 -- executable test fixture.
-	svc := NewService("", FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	svc := NewService("", FuncStarter(func(context.Context, string, ...string) (Process, error) { return survivingProcess(), nil }), nil)
 	svc.SetInstalledGame(installedGamePath(root), "missing-game.exe")
 	resolved, err := svc.ResolvedGamePath()
 	if err != nil {
@@ -129,5 +150,53 @@ func TestInstalledGameDiscoversPreferredExecutable(t *testing.T) {
 	}
 	if resolved != preferred {
 		t.Fatalf("got %q, want %q", resolved, preferred)
+	}
+}
+
+func TestLaunchSucceedsAfterGracePeriod(t *testing.T) {
+	t.Parallel()
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+		return survivingProcess(), nil
+	}), nil)
+	svc.SetLaunchGrace(10 * time.Millisecond)
+	if err := svc.PlayOffline(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultLaunchGraceIsBounded(t *testing.T) {
+	t.Parallel()
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+		return survivingProcess(), nil
+	}), nil)
+	if svc.launchGrace != 5*time.Second {
+		t.Fatalf("launch grace = %s, want 5s", svc.launchGrace)
+	}
+}
+
+func TestLaunchReportsEarlyExit(t *testing.T) {
+	t.Parallel()
+	for name, waitError := range map[string]error{"clean": nil, "failure": errors.New("exit status 1")} {
+		waitError := waitError
+		t.Run(name, func(t *testing.T) {
+			svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+				return fakeProcess{wait: func() error { return waitError }}, nil
+			}), nil)
+			svc.SetLaunchGrace(time.Second)
+			if err := svc.PlayOffline(context.Background()); !errors.Is(err, ErrGameExitedEarly) {
+				t.Fatalf("error = %v, want ErrGameExitedEarly", err)
+			}
+		})
+	}
+}
+
+func TestLaunchReportsStartFailure(t *testing.T) {
+	t.Parallel()
+	want := errors.New("start failed")
+	svc := NewService("game", FuncStarter(func(context.Context, string, ...string) (Process, error) {
+		return nil, want
+	}), nil)
+	if err := svc.PlayOffline(context.Background()); !errors.Is(err, want) {
+		t.Fatalf("error = %v, want wrapped start failure", err)
 	}
 }

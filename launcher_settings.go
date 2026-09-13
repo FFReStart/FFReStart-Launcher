@@ -47,6 +47,18 @@ func (s *settingsStore) Load(gameRoot string) LauncherSettings {
 	if err != nil || json.Unmarshal(data, &settings) != nil || settings.Version != 1 {
 		return defaultSettings(gameRoot)
 	}
+	var legacyAudio struct {
+		AutoplayMusic *bool `json:"autoplayMusic"`
+		MusicAutoplay *bool `json:"musicAutoplay"`
+		Autoplay      *bool `json:"autoplay"`
+	}
+	if json.Unmarshal(data, &legacyAudio) == nil {
+		for _, autoplay := range []*bool{legacyAudio.AutoplayMusic, legacyAudio.MusicAutoplay, legacyAudio.Autoplay} {
+			if autoplay != nil && !*autoplay {
+				settings.MusicMuted = true
+			}
+		}
+	}
 	if strings.TrimSpace(settings.InstallDirectory) == "" || !filepath.IsAbs(settings.InstallDirectory) {
 		settings.InstallDirectory = gameRoot
 	} else {

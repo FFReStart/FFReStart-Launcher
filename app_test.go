@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -28,7 +29,8 @@ func TestInstalledGamePlayDoesNotWaitForInstallAction(t *testing.T) {
 	}))
 	defer server.Close()
 
-	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) (launch.Process, error) { return appTestProcess{}, nil }), nil)
+	launcher.SetLaunchGrace(time.Millisecond)
 	app := NewApp(launcher, nil)
 	app.startup(context.Background())
 	app.ConfigureInstaller(&patch.Installer{Root: t.TempDir()}, server.URL, server.Client())
@@ -56,7 +58,8 @@ func (s *panicTokenStore) SaveRefresh(context.Context, string) error {
 
 func TestOfflineAppHasNoTokenPath(t *testing.T) {
 	store := &panicTokenStore{}
-	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) (launch.Process, error) { return appTestProcess{}, nil }), nil)
+	launcher.SetLaunchGrace(time.Millisecond)
 	app := NewApp(launcher, store)
 	app.startup(context.Background())
 	if err := app.PlayOffline(); err != nil {
@@ -67,6 +70,13 @@ func TestOfflineAppHasNoTokenPath(t *testing.T) {
 	}
 }
 
+type appTestProcess struct{}
+
+func (appTestProcess) Wait() error {
+	time.Sleep(time.Second)
+	return nil
+}
+
 func TestSignedManifestDisablesDeveloperChannel(t *testing.T) {
 	t.Parallel()
 	app := NewApp(nil, nil)
@@ -75,5 +85,39 @@ func TestSignedManifestDisablesDeveloperChannel(t *testing.T) {
 	state := app.GetLauncherState()
 	if state.DeveloperChannel || state.UpdateChannel != "SIGNED GAME MANIFEST" {
 		t.Fatalf("signed manifest did not take precedence: %+v", state)
+	}
+}
+
+func TestSuccessfulLaunchClosesLauncher(t *testing.T) {
+	t.Parallel()
+	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) (launch.Process, error) {
+		return appTestProcess{}, nil
+	}), nil)
+	launcher.SetLaunchGrace(time.Millisecond)
+	app := NewApp(launcher, nil)
+	closed := false
+	app.configureQuit(func() { closed = true })
+	if err := app.PlayOffline(); err != nil {
+		t.Fatal(err)
+	}
+	if !closed {
+		t.Fatal("launcher remained open after a successful launch")
+	}
+}
+
+func TestFailedLaunchKeepsLauncherOpen(t *testing.T) {
+	t.Parallel()
+	want := errors.New("start failure")
+	launcher := launch.NewService("game", launch.FuncStarter(func(context.Context, string, ...string) (launch.Process, error) {
+		return nil, want
+	}), nil)
+	app := NewApp(launcher, nil)
+	closed := false
+	app.configureQuit(func() { closed = true })
+	if err := app.PlayOffline(); !errors.Is(err, want) {
+		t.Fatalf("error = %v, want start failure", err)
+	}
+	if closed {
+		t.Fatal("launcher closed after a failed launch")
 	}
 }

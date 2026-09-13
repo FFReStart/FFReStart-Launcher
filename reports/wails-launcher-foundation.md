@@ -42,9 +42,15 @@ Met in this session:
   not sign in, request a ticket, contact the control API, or import `internal/auth`.
 - The Wails app has no token-bearing method. `TestOfflineAppHasNoTokenPath`
   uses a panic-on-access token sentinel and proves zero reads and writes.
-- The game start completes before a blocking update checker can return.
-  `TestOfflineLaunchDoesNotWaitForUpdate` enforces a 100 ms upper bound while
-  the checker remains blocked.
+- A game start is observed for a bounded five-second grace period. The launcher
+  closes only when the detached game remains alive; start failure or early exit
+  keeps it open and returns a visible error. The update checker remains fully
+  outside this grace path, and a short injected grace keeps
+  `TestOfflineLaunchDoesNotWaitForUpdate` deterministic.
+- Native starts use the game directory as their working directory. Windows
+  creates a detached, breakaway process group with handle inheritance disabled;
+  Unix creates a new session. Closing the launcher therefore does not terminate
+  or retain handles to the game.
 - A process-lifetime `sync.Once` permits at most one update check. It runs with
   a 1.5 second context deadline and its failure is ignored by the play path.
 - `TestNetworkUnavailableAllowsTwentyOfTwentyLaunches` proves 20/20 simulated
@@ -234,7 +240,7 @@ loaded from the user's local app-data directory.
 | Void, panel, raised-panel, text, muted, nano-green, cyan and danger palette | Ported | CSS variables preserve the original values and translucent layering. |
 | Bahnschrift SemiCondensed display and Segoe UI Variable body typography | Ported | Arial Narrow/Avenir condensed and system UI fallbacks cover Linux and macOS. |
 | `newloginbackground.png` scene and horizontal darkening treatment | Ported | Served from an embedded copy of the already-public repository asset. |
-| ReStart logo, hero/menu art and public button artwork | Ported | Logo and hero art are visible; button art remains available but CSS provides sharper scalable controls. |
+| ReStart logo, hero/menu art and public button artwork | Ported | Logo and hero art are visible; button art remains available but CSS provides sharper scalable controls. The public 1920px logo also supplies `build/appicon.png`, the embedded Linux icon, and a Windows ICO with 16 through 256px variants for the executable, window and taskbar. |
 | Cyan/green circuit decoration, shadows and glass-like panels | Ported | Responsive CSS recreates the header, hero field and mission panel. |
 | Primary and secondary button states, keyboard focus and disabled states | Ported | Hover, press, focus, busy and disabled treatments are retained. |
 | High-contrast cyan-bordered tooltips | Ported | Tooltips use the original dark raised background and readable foreground. |
@@ -247,11 +253,11 @@ loaded from the user's local app-data directory.
 | Executable discovery | Ported | Signed installs remain preferred; the exact legacy `FFReStart-Dev-Build\FFReStart-Dev-Build.exe` layout is detected in the chosen root, launched with that folder as its working directory, and falls back to safe bounded discovery. |
 | Checking, ready, offline-ready, failure, download and install states | Ported | The mission card, dot, version badge, action label and status copy change together. Existing installs remain playable after update failures. |
 | Install/update progress | Ported | The unsigned developer download reports byte progress when GitHub supplies a length; the signed/resumable WP9 channel retains its indeterminate active indicator. |
-| Play button retry/install/launch behavior | Changed | Offline play is the primary ready action. When no game exists, the same primary control invokes the signed installer. |
-| Offline launch during unavailable updates | Ported | The no-auth, non-blocking path and its 20/20 test remain unchanged. |
+| Play button retry/install/launch behavior | Changed | Offline play is the primary ready action. When no game exists, the same primary control invokes the configured installer. A successful launch closes the launcher after the game survives a five-second grace period; early exit or start failure keeps it open with the error banner. |
+| Offline launch during unavailable updates | Ported | The no-auth path and its 20/20 test remain unchanged. Network work is never awaited; only the intentional bounded process-health grace precedes launcher close. |
 | Discord, support and game-files actions | Ported | Discord maps exactly to `Q5je3v9Bjg`, Support to `VNVjmPn2Fn`, and Game Files creates then opens the persisted root with `explorer.exe`, `open`, or `xdg-open` using one explicit argument and no shell. Failures appear in the error banner. |
 | Persisted launcher settings | Ported | Versioned JSON is written atomically under the per-user local app-data directory; it contains no credential material. |
-| Theme autoplay, loop, volume and mute | Ported | HTML audio uses the persisted 35% default and local-only MP3 endpoint, with a silent missing-file fallback. |
+| Theme autoplay, loop, volume and mute | Ported | Music starts automatically unless muted and loops from the local-only MP3 endpoint. Persisted mute and volume now live only in Settings; the redundant autoplay control is removed, and legacy autoplay-off values migrate to muted. |
 | Embedded private theme asset | Changed | Deliberately excluded. `scripts/install-local-music.ps1` uses read-only `git show` to install it at `%LOCALAPPDATA%\FFReStart\launcher\audio`. |
 | Username/password form and remembered local password session | Changed | Replaced per D08/D13 with external-browser S256 PKCE or RFC 8628 device sign-in. The launcher never handles passwords. |
 | Keyring-backed remembered session | Ported | Refresh tokens use the OS keyring with process-memory fallback; access and ID tokens remain memory-only in Go. |
@@ -264,7 +270,7 @@ loaded from the user's local app-data directory.
 
 | Control | Result | Failure or disabled-state communication |
 |---|---|---|
-| Music mute and volume | Working | Disabled only when the local private track is absent; the panel and setting explain how to install it. Persistence failures use the visible error banner. |
+| Music mute and volume | Working | Located only in Settings and disabled only when the local private track is absent. Music autoplays unless muted; volume/mute persist, and failures use the visible error banner. |
 | Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when ZITADEL is unconfigured or the pilot is already signed in. Multiplayer remains labelled unavailable pending WP7/WP8. |
 | Sign out | Working | Visible only for a signed-in pilot; keyring failures use the error banner. |
 | Play / Install or Update | Working | Plays the detected legacy or signed install offline. With no install it invokes the configured channel. Busy state disables it with a wait tooltip; all failures remain visible. |
@@ -274,7 +280,6 @@ loaded from the user's local app-data directory.
 | Default, Change, and setup/settings folder controls | Working | Change uses the nearest existing chooser directory. All location controls are disabled during installation with an explanatory tooltip. |
 | First-run Continue | Working | Persists completion; it is disabled during installation and save failures use the error banner. |
 | Settings gear and close | Working | Open and close the preferences modal without backend state changes. |
-| Autoplay music setting | Working | Disabled with an installation tooltip when the private track is absent; persistence failures use the error banner. |
 | Error dismiss | Working | Dismisses the persistent, accessible error banner after the failure has been read. |
 
 Deferred items are deliberately limited to integration work that does not yet
@@ -317,3 +322,8 @@ branch directly into a protected branch.
   pinning, zip-slip rejection, atomic promotion with retained rollback, and
   signed-manifest precedence. The 20/20 unavailable-network test passed 20
   repeated runs (400 simulated offline launches).
+- Launch-supervision tests use fake processes to cover successful grace expiry,
+  clean early exit, non-zero early exit and start failure; an app-boundary test
+  confirms only the successful case requests launcher shutdown. Settings tests
+  cover autoplay-off migration, and packaging inspection confirms seven Windows
+  icon sizes from 16 through 256 pixels plus the embedded 1024px Linux icon.

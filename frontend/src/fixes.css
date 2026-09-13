@@ -39,3 +39,12 @@
 }
 
 button:disabled { cursor: not-allowed; }
+
+.settings-music {
+  margin: 20px 0;
+  padding: 14px;
+  border-block: 1px solid rgba(78, 164, 184, .28);
+  background: rgba(4, 17, 28, .48);
+}
+
+.settings-music .music-row { margin-top: 9px; }

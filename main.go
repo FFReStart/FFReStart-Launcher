@@ -17,6 +17,8 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	linuxoptions "github.com/wailsapp/wails/v2/pkg/options/linux"
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 var (
@@ -29,6 +31,9 @@ var (
 
 //go:embed all:frontend/dist
 var assets embed.FS
+
+//go:embed build/appicon.png
+var appIcon []byte
 
 func main() {
 	key, err := update.ReleasePublicKey(updateKeyID, updatePublicKeyHex, releaseMode == "true")
@@ -64,6 +69,7 @@ func main() {
 	launcher.SetUpdateTimeout(1500 * time.Millisecond)
 	refresh := &auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}}
 	app := NewApp(launcher, refresh)
+	app.configureQuit(func() { wailsruntime.Quit(app.ctx) })
 	app.ConfigureInstaller(installer, os.Getenv("FFRESTART_GAME_MANIFEST_URL"), nil)
 	if os.Getenv("FFRESTART_GAME_MANIFEST_URL") == "" {
 		app.configureDeveloperInstaller(&patch.DeveloperInstaller{Root: settings.InstallDirectory})
@@ -81,6 +87,7 @@ func main() {
 		MinWidth:         880,
 		MinHeight:        620,
 		AssetServer:      &assetserver.Options{Assets: frontendAssets, Handler: launcherAssetHandler()},
+		Linux:            &linuxoptions.Options{Icon: appIcon, ProgramName: "ffrestart-launcher"},
 		BackgroundColour: &options.RGBA{R: 6, G: 17, B: 29, A: 1},
 		OnStartup:        app.startup,
 		Bind:             []interface{}{app},

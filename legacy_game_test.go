@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/FFReStart/FFReStart-Launcher/internal/launch"
 	"github.com/FFReStart/FFReStart-Launcher/internal/patch"
@@ -53,10 +54,11 @@ func TestLegacyGameStatusAndOfflineLaunch(t *testing.T) {
 	}
 	var startedPath string
 	var startedArguments []string
-	service := launch.NewService("", launch.FuncStarter(func(_ context.Context, path string, arguments ...string) error {
+	service := launch.NewService("", launch.FuncStarter(func(_ context.Context, path string, arguments ...string) (launch.Process, error) {
 		startedPath, startedArguments = path, arguments
-		return nil
+		return legacyTestProcess{}, nil
 	}), nil)
+	service.SetLaunchGrace(time.Millisecond)
 	installer := &patch.Installer{Root: root}
 	service.SetInstalledGame(&gameInstallation{installer: installer}, legacyWindowsGame)
 	app := NewApp(service, nil)
@@ -72,6 +74,13 @@ func TestLegacyGameStatusAndOfflineLaunch(t *testing.T) {
 	if startedPath != executable || !reflect.DeepEqual(startedArguments, []string{"--offline"}) {
 		t.Fatalf("started %q %q", startedPath, startedArguments)
 	}
+}
+
+type legacyTestProcess struct{}
+
+func (legacyTestProcess) Wait() error {
+	time.Sleep(time.Second)
+	return nil
 }
 
 func TestNearestExistingDirectory(t *testing.T) {

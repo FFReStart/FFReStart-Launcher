@@ -32,6 +32,7 @@ type App struct {
 	settings      LauncherSettings
 	defaultRoot   string
 	auth          authConfig
+	quit          func()
 
 	mu                   sync.RWMutex
 	status               GameStatus
@@ -68,6 +69,7 @@ func NewApp(launcher *launch.Service, tokens auth.TokenVault) *App {
 func (a *App) ConfigureInstaller(installer *patch.Installer, manifestURL string, client *http.Client) {
 	a.installer, a.manifestURL, a.client = installer, manifestURL, client
 }
+func (a *App) configureQuit(quit func()) { a.quit = quit }
 func (a *App) configureDeveloperInstaller(installer *patch.DeveloperInstaller) {
 	a.developer = installer
 	if installer != nil {
@@ -93,7 +95,19 @@ func (a *App) PlayOffline() error {
 	if a.launcher == nil {
 		return errors.New("offline launcher is unavailable")
 	}
-	return a.launcher.PlayOffline(a.ctx)
+	return a.finishLaunch(a.launcher.PlayOffline(a.ctx))
+}
+
+// finishLaunch is shared by every launch mode so future multiplayer hand-off
+// closes the launcher only after the same supervised success contract.
+func (a *App) finishLaunch(err error) error {
+	if err != nil {
+		return err
+	}
+	if a.quit != nil {
+		a.quit()
+	}
+	return nil
 }
 
 func (a *App) GamePath() string {

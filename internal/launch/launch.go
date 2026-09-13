@@ -3,6 +3,7 @@ package launch
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -14,29 +15,40 @@ import (
 	"time"
 )
 
-var ErrGamePathRequired = errors.New("install the game or configure a development path before playing")
+var (
+	ErrGamePathRequired = errors.New("install the game or configure a development path before playing")
+	ErrGameExitedEarly  = errors.New("game closed during launch")
+)
 
 type InstalledGame interface {
 	CurrentPath() (string, error)
 }
 
 type Starter interface {
-	Start(context.Context, string, ...string) error
+	Start(context.Context, string, ...string) (Process, error)
 }
 
-type FuncStarter func(context.Context, string, ...string) error
+type Process interface {
+	Wait() error
+}
 
-func (f FuncStarter) Start(ctx context.Context, path string, args ...string) error {
+type FuncStarter func(context.Context, string, ...string) (Process, error)
+
+func (f FuncStarter) Start(ctx context.Context, path string, args ...string) (Process, error) {
 	return f(ctx, path, args...)
 }
 
 type ExecStarter struct{}
 
-func (ExecStarter) Start(_ context.Context, path string, args ...string) error {
+func (ExecStarter) Start(_ context.Context, path string, args ...string) (Process, error) {
 	// #nosec G204 -- path is the executable explicitly configured by the local user.
 	cmd := exec.Command(path, args...)
 	cmd.Dir = filepath.Dir(path)
-	return cmd.Start()
+	configureDetachedProcess(cmd)
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
 }
 
 type UpdateChecker interface {
@@ -52,6 +64,7 @@ type Service struct {
 	checker       UpdateChecker
 	updateOnce    sync.Once
 	updateTimeout time.Duration
+	launchGrace   time.Duration
 }
 
 func NewService(gamePath string, starter Starter, checker UpdateChecker) *Service {
@@ -61,10 +74,11 @@ func NewService(gamePath string, starter Starter, checker UpdateChecker) *Servic
 			gamePath = absolute
 		}
 	}
-	return &Service{gamePath: gamePath, starter: starter, checker: checker, updateTimeout: 1500 * time.Millisecond}
+	return &Service{gamePath: gamePath, starter: starter, checker: checker, updateTimeout: 1500 * time.Millisecond, launchGrace: 5 * time.Second}
 }
 
 func (s *Service) SetUpdateTimeout(timeout time.Duration) { s.updateTimeout = timeout }
+func (s *Service) SetLaunchGrace(grace time.Duration)     { s.launchGrace = grace }
 
 // SetInstalledGame makes the patch installer's current immutable version the
 // default. A configured game path remains a development override.
@@ -180,8 +194,24 @@ func (s *Service) PlayOffline(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.starter.Start(ctx, path, "--offline"); err != nil {
-		return err
+	process, err := s.starter.Start(ctx, path, "--offline")
+	if err != nil {
+		return fmt.Errorf("start game: %w", err)
+	}
+	if process == nil {
+		return errors.New("start game: no process handle")
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- process.Wait() }()
+	timer := time.NewTimer(s.launchGrace)
+	defer timer.Stop()
+	select {
+	case waitErr := <-waited:
+		if waitErr != nil {
+			return fmt.Errorf("%w: %v", ErrGameExitedEarly, waitErr)
+		}
+		return ErrGameExitedEarly
+	case <-timer.C:
 	}
 	s.updateOnce.Do(func() {
 		if s.checker == nil {
