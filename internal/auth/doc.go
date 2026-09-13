@@ -1,7 +1,5 @@
-// Package auth will own optional multiplayer credentials in WP8.
-//
-// It is intentionally not imported by the offline launch path. Tokens remain
-// in Go and token-bearing operations must never be bound to Wails.
+// Package auth owns optional multiplayer credentials. Tokens remain in Go;
+// token-bearing operations must never be bound to Wails.
 package auth
 
 import "context"

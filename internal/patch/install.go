@@ -30,11 +30,11 @@ type Installer struct {
 }
 
 func DefaultGameRoot() (string, error) {
-	root, err := os.UserConfigDir()
+	root, err := os.UserCacheDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "FFReStart", "game"), nil
+	return filepath.Join(root, "FFReStart"), nil
 }
 
 func (i Installer) Install(ctx context.Context, manifestData []byte) error {
@@ -96,6 +96,9 @@ func (i Installer) CurrentPath() (string, error) {
 	}
 	return filepath.Join(i.Root, "versions", strings.TrimPrefix(version, "v")), nil
 }
+
+// CurrentVersion returns the atomically selected installed version.
+func (i Installer) CurrentVersion() (string, error) { return i.currentVersion() }
 
 func (i Installer) Rollback() error {
 	previous, err := readVersion(filepath.Join(i.Root, "previous.json"))

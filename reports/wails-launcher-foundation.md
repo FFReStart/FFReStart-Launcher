@@ -42,9 +42,15 @@ Met in this session:
   not sign in, request a ticket, contact the control API, or import `internal/auth`.
 - The Wails app has no token-bearing method. `TestOfflineAppHasNoTokenPath`
   uses a panic-on-access token sentinel and proves zero reads and writes.
-- The game start completes before a blocking update checker can return.
-  `TestOfflineLaunchDoesNotWaitForUpdate` enforces a 100 ms upper bound while
-  the checker remains blocked.
+- A game start is observed for a bounded five-second grace period. The launcher
+  closes only when the detached game remains alive; start failure or early exit
+  keeps it open and returns a visible error. The update checker remains fully
+  outside this grace path, and a short injected grace keeps
+  `TestOfflineLaunchDoesNotWaitForUpdate` deterministic.
+- Native starts use the game directory as their working directory. Windows
+  creates a detached, breakaway process group with handle inheritance disabled;
+  Unix creates a new session. Closing the launcher therefore does not terminate
+  or retain handles to the game.
 - A process-lifetime `sync.Once` permits at most one update check. It runs with
   a 1.5 second context deadline and its failure is ignored by the play path.
 - `TestNetworkUnavailableAllowsTwentyOfTwentyLaunches` proves 20/20 simulated
@@ -214,6 +220,79 @@ cover offline launch with no network/account and multiplayer login/update/play.
 macOS needs a universal app, Developer ID signing with hardened runtime,
 notarization, stapling, and validation on a dedicated Mac runner.
 
+## Original-launcher experience parity
+
+> **OWNER APPROVAL REQUIRED:** when no signed game manifest is configured, the
+> launcher exposes the original **unsigned developer build channel**. It is
+> intentionally weaker than D13/WP9's signed design, although it is no weaker
+> than the WPF launcher it replaces. Configuring a signed game manifest disables
+> this compatibility channel automatically. Offline play never waits for either
+> update channel.
+
+The WPF reference for this comparison is the owner's read-only
+`0-zach/launcher-auth-ui-integration` branch at `b01c8a3`. Only assets already
+public on `origin/main` are used. The private MP3 remains outside Git and is
+loaded from the user's local app-data directory.
+
+| Original feature or visual element | Wails result | Notes |
+|---|---|---|
+| 1100×680 centered launcher and 880×620 minimum | Ported | Native Wails window uses the same dimensions and floor. |
+| Void, panel, raised-panel, text, muted, nano-green, cyan and danger palette | Ported | CSS variables preserve the original values and translucent layering. |
+| Bahnschrift SemiCondensed display and Segoe UI Variable body typography | Ported | Arial Narrow/Avenir condensed and system UI fallbacks cover Linux and macOS. |
+| `newloginbackground.png` scene and horizontal darkening treatment | Ported | Served from an embedded copy of the already-public repository asset. |
+| ReStart logo, hero/menu art and public button artwork | Ported | Logo and hero art are visible; button art remains available but CSS provides sharper scalable controls. The public 1920px logo also supplies `build/appicon.png`, the embedded Linux icon, and a Windows ICO with 16 through 256px variants for the executable, window and taskbar. |
+| Cyan/green circuit decoration, shadows and glass-like panels | Ported | Responsive CSS recreates the header, hero field and mission panel. |
+| Primary and secondary button states, keyboard focus and disabled states | Ported | Hover, press, focus, busy and disabled treatments are retained. |
+| High-contrast cyan-bordered tooltips | Ported | Tooltips use the original dark raised background and readable foreground. |
+| Entrance, hover, progress and status animations | Ported | Reduced-motion preferences are respected. |
+| System window chrome | Ported | The WPF reference used normal system chrome, so Wails keeps native chrome rather than inventing a frameless title bar. |
+| Brand header and guest/signed-in pilot chip | Ported | Account state contains display state only; no credential reaches TypeScript. |
+| Hero welcome label and fight-for-the-future headline | Ported | Placement and condensed uppercase treatment match the reference. |
+| First-run setup | Ported | A modal explains offline/account behavior and confirms or changes the install root before continuing. |
+| Install-location selection, default reset and persistence | Ported | The default is the original `%LOCALAPPDATA%\FFReStart` root. Settings migrate PR 6's exact obsolete `FFReStart\game` default back to that root without changing custom locations. The native chooser starts at the selected directory or its nearest existing parent, so a missing folder cannot break Change. |
+| Executable discovery | Ported | Signed installs remain preferred; the exact legacy `FFReStart-Dev-Build\FFReStart-Dev-Build.exe` layout is detected in the chosen root, launched with that folder as its working directory, and falls back to safe bounded discovery. |
+| Checking, ready, offline-ready, failure, download and install states | Ported | The mission card, dot, version badge, action label and status copy change together. Existing installs remain playable after update failures. |
+| Install/update progress | Ported | The unsigned developer download reports byte progress when GitHub supplies a length; the signed/resumable WP9 channel retains its indeterminate active indicator. |
+| Play button retry/install/launch behavior | Changed | Offline play is the primary ready action. When no game exists, the same primary control invokes the configured installer. A successful launch closes the launcher after the game survives a five-second grace period; early exit or start failure keeps it open with the error banner. |
+| Offline launch during unavailable updates | Ported | The no-auth path and its 20/20 test remain unchanged. Network work is never awaited; only the intentional bounded process-health grace precedes launcher close. |
+| Discord, support and game-files actions | Ported | Discord maps exactly to `Q5je3v9Bjg`, Support to `VNVjmPn2Fn`, and Game Files creates then opens the persisted root with `explorer.exe`, `open`, or `xdg-open` using one explicit argument and no shell. Failures appear in the error banner. |
+| Persisted launcher settings | Ported | Versioned JSON is written atomically under the per-user local app-data directory; it contains no credential material. |
+| Theme autoplay, loop, volume and mute | Ported | Music starts automatically unless muted and loops from the local-only MP3 endpoint. Persisted mute and volume now live only in Settings; the redundant autoplay control is removed, and legacy autoplay-off values migrate to muted. |
+| Embedded private theme asset | Changed | Deliberately excluded. `scripts/install-local-music.ps1` uses read-only `git show` to install it at `%LOCALAPPDATA%\FFReStart\launcher\audio`. |
+| Username/password form and remembered local password session | Changed | Replaced per D08/D13 with external-browser S256 PKCE or RFC 8628 device sign-in. The launcher never handles passwords. |
+| Keyring-backed remembered session | Ported | Refresh tokens use the OS keyring with process-memory fallback; access and ID tokens remain memory-only in Go. |
+| Multiplayer launch after sign-in | Deferred | UI clearly says unavailable until WP7 tickets and WP8 game hand-off exist. Sign-in is optional and never gates offline play. |
+| Authentication token passed in argv | Changed | No token is passed today. The approved future path is one length-delimited hand-off over stdin with only `--auth-token-stdin` in argv. |
+| Preview-only WPF mode | Deferred | The production Wails layout is directly previewable through the frontend dev server; a separate runtime preview flag adds no user-facing capability. |
+| WPF zip updater and version text file | Changed | Restored as an explicitly labelled unsigned developer compatibility channel using the two exact pinned GitHub release URLs. Redirects are restricted to GitHub release-asset hosts; archive and entry sizes are bounded; zip traversal and symlinks are rejected; staging is atomically promoted with a retained `.previous` rollback. `Version.txt` uses the original three-part numeric comparison and is displayed as `vX.Y.Z`. A configured signed manifest disables this channel. |
+
+### Control audit
+
+| Control | Result | Failure or disabled-state communication |
+|---|---|---|
+| Music mute and volume | Working | Located only in Settings and disabled only when the local private track is absent. Music autoplays unless muted; volume/mute persist, and failures use the visible error banner. |
+| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when ZITADEL is unconfigured or the pilot is already signed in. Multiplayer remains labelled unavailable pending WP7/WP8. |
+| Sign out | Working | Visible only for a signed-in pilot; keyring failures use the error banner. |
+| Play / Install or Update | Working | Plays the detected legacy or signed install offline. With no install it invokes the configured channel. Busy state disables it with a wait tooltip; all failures remain visible. |
+| Check for Updates | Working | Uses the signed channel when configured, otherwise the clearly labelled unsigned developer channel. Busy state explains why it is disabled. |
+| Discord and Support | Working | Use the original exact mapping; OS-open failures use the error banner. |
+| Game Files | Working | Creates and opens the install root, not the build subfolder; OS-open and filesystem failures use the error banner. |
+| Default, Change, and setup/settings folder controls | Working | Change uses the nearest existing chooser directory. All location controls are disabled during installation with an explanatory tooltip. |
+| First-run Continue | Working | Persists completion; it is disabled during installation and save failures use the error banner. |
+| Settings gear and close | Working | Open and close the preferences modal without backend state changes. |
+| Error dismiss | Working | Dismisses the persistent, accessible error banner after the failure has been read. |
+
+Deferred items are deliberately limited to integration work that does not yet
+exist upstream: multiplayer tickets/stdin hand-off, signed-channel byte-level
+progress, and the multi-OS release/signature matrix already assigned to WP26.
+
+Parity verification on Windows 11 passed `just check`, clean Wails
+`windows/amd64` and Dockerized WebKitGTK 4.1 Linux builds, and 20 repeated runs of the 20/20 unavailable-network
+offline-launch test (400 simulated launches). A native packaged-app smoke test
+rendered the 1100×680 experience with all three public image assets, and its
+accessibility state reported audio playing from the private local track. The
+owner's executable is `build/bin/ffrestart-launcher.exe`.
+
 ## .NET cutover option
 
 Keep the .NET launcher buildable while the Wails branch completes WP8, WP9 and
@@ -237,3 +316,14 @@ branch directly into a protected branch.
 - Secret scan of the diff: no token, secret, private key literal, PEM key, RFC
   8032 spike key, or signing material found. Test code derives its test-only key
   from a non-secret deterministic byte sequence at runtime.
+- PR 6 regression coverage verifies the OS-specific folder commands, nearest
+  existing dialog default, stale-default migration, exact legacy layout and
+  displayed version, offline legacy launch, developer-channel URL/redirect
+  pinning, zip-slip rejection, atomic promotion with retained rollback, and
+  signed-manifest precedence. The 20/20 unavailable-network test passed 20
+  repeated runs (400 simulated offline launches).
+- Launch-supervision tests use fake processes to cover successful grace expiry,
+  clean early exit, non-zero early exit and start failure; an app-boundary test
+  confirms only the successful case requests launcher shutdown. Settings tests
+  cover autoplay-off migration, and packaging inspection confirms seven Windows
+  icon sizes from 16 through 256 pixels plus the embedded 1024px Linux icon.

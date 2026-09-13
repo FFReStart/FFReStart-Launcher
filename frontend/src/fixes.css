@@ -1,0 +1,50 @@
+.channel-warning {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 185, 64, .72);
+  background: rgba(78, 44, 5, .82);
+  color: #ffd37a;
+  font-size: 11px;
+  letter-spacing: .04em;
+}
+
+.channel-warning span { color: #fff1ca; letter-spacing: 0; }
+
+.error-banner {
+  position: fixed;
+  z-index: 100;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  width: min(700px, calc(100vw - 40px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid #ff6b6b;
+  background: rgba(57, 9, 16, .96);
+  color: #fff;
+  box-shadow: 0 12px 42px rgba(0, 0, 0, .5);
+}
+
+.error-banner button {
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+button:disabled { cursor: not-allowed; }
+
+.settings-music {
+  margin: 20px 0;
+  padding: 14px;
+  border-block: 1px solid rgba(78, 164, 184, .28);
+  background: rgba(4, 17, 28, .48);
+}
+
+.settings-music .music-row { margin-top: 9px; }

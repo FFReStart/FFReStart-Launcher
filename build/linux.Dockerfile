@@ -4,6 +4,7 @@ RUN npm install --global pnpm@9.15.1
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY frontend/ ./
+COPY GameLauncher/images/*.png /src/GameLauncher/images/
 RUN pnpm run build
 
 FROM golang:1.27.1-bookworm AS builder
