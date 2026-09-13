@@ -3,8 +3,12 @@ package launch
 import (
 	"context"
 	"errors"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -110,7 +114,61 @@ func (s *Service) ResolvedGamePath() (string, error) {
 	if err != nil || root == "" {
 		return "", ErrGamePathRequired
 	}
-	return filepath.Join(root, executable), nil
+	expected := filepath.Join(root, executable)
+	if info, statErr := os.Stat(expected); statErr == nil && !info.IsDir() {
+		return expected, nil
+	}
+	if discovered := discoverExecutable(root); discovered != "" {
+		return discovered, nil
+	}
+	return expected, nil
+}
+
+func discoverExecutable(root string) string {
+	type candidate struct {
+		path      string
+		preferred bool
+		depth     int
+	}
+	var candidates []candidate
+	_ = filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		name := strings.ToLower(entry.Name())
+		if strings.Contains(name, "launcher") || strings.Contains(name, "unitycrashhandler") {
+			return nil
+		}
+		if runtime.GOOS == "windows" && filepath.Ext(name) != ".exe" {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return nil
+		}
+		if runtime.GOOS != "windows" && info.Mode()&0o111 == 0 {
+			return nil
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return nil
+		}
+		candidates = append(candidates, candidate{path: path, preferred: strings.Contains(name, "ffrestart"), depth: strings.Count(relative, string(filepath.Separator))})
+		return nil
+	})
+	if len(candidates) == 0 {
+		return ""
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].preferred != candidates[j].preferred {
+			return candidates[i].preferred
+		}
+		if candidates[i].depth != candidates[j].depth {
+			return candidates[i].depth < candidates[j].depth
+		}
+		return candidates[i].path < candidates[j].path
+	})
+	return candidates[0].path
 }
 
 // PlayOffline starts the game without credentials, tickets, control APIs, or

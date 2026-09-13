@@ -52,3 +52,14 @@ GitHub Actions will build a self-contained, single-file Windows x64 executable a
 ## Game data location
 
 The launcher installs and updates the game under `%LOCALAPPDATA%\FFReStart`. This directory also contains `Version.txt` and any temporary game download.
+# Local launcher music
+
+The theme track is private and is never embedded in or committed to this public repository. Developers who have the owner's local source branch can run:
+
+```powershell
+.\scripts\install-local-music.ps1
+```
+
+The script reads the track with `git show` without checking out or changing that branch, then installs it at `%LOCALAPPDATA%\FFReStart\launcher\audio\launcher-main-theme.mp3`. The Wails launcher autoplays and loops it when available, and silently continues without music otherwise.
+
+Optional multiplayer sign-in is enabled only when `FFRESTART_ZITADEL_ISSUER` and `FFRESTART_ZITADEL_CLIENT_ID` identify a configured public/native client. Passwords are never accepted by the launcher. Offline play is always available independently of sign-in.

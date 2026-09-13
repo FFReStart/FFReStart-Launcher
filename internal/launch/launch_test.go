@@ -3,7 +3,9 @@ package launch
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -99,5 +101,33 @@ func TestDevelopmentPathOverridesInstalledVersion(t *testing.T) {
 	want, _ := filepath.Abs(filepath.Join("dev", "game.exe"))
 	if resolved != want {
 		t.Fatalf("resolved path = %q, want %q", resolved, want)
+	}
+}
+
+func TestInstalledGameDiscoversPreferredExecutable(t *testing.T) {
+	root := t.TempDir()
+	preferred := filepath.Join(root, "FFReStart-Dev-Build", "FFReStart.exe")
+	if runtime.GOOS != "windows" {
+		preferred = filepath.Join(root, "FFReStart.x86_64")
+	}
+	if err := os.MkdirAll(filepath.Dir(preferred), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(preferred, []byte("game"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(preferred, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	} // #nosec G302 -- executable test fixture.
+	svc := NewService("", FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	svc.SetInstalledGame(installedGamePath(root), "missing-game.exe")
+	resolved, err := svc.ResolvedGamePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != preferred {
+		t.Fatalf("got %q, want %q", resolved, preferred)
 	}
 }
