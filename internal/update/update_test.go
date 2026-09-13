@@ -109,3 +109,17 @@ func TestReleaseBuildRequiresProductionKey(t *testing.T) {
 		t.Fatal("release accepted a missing key")
 	}
 }
+
+func TestReleaseBuildRejectsKnownTestKeyUnderProductionID(t *testing.T) {
+	publicKey := testOnlyPrivateKey().Public().(ed25519.PublicKey)
+	if _, err := ReleasePublicKey("release-2026-01", hex.EncodeToString(publicKey), true); !errors.Is(err, ErrTestReleaseKey) {
+		t.Fatalf("error = %v, want known test key rejection", err)
+	}
+}
+
+func TestReleaseBuildRejectsSpikeRFC8032KeyUnderProductionID(t *testing.T) {
+	const spikePublicKey = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+	if _, err := ReleasePublicKey("release-2026-01", spikePublicKey, true); !errors.Is(err, ErrTestReleaseKey) {
+		t.Fatalf("error = %v, want spike test key rejection", err)
+	}
+}

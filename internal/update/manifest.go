@@ -19,7 +19,17 @@ var (
 	ErrInvalidManifest  = errors.New("invalid update manifest")
 	ErrInvalidSignature = errors.New("update manifest signature rejected")
 	ErrNotNewer         = errors.New("update version is not newer")
+	ErrTestReleaseKey   = errors.New("release build refuses a known test update key")
 )
+
+// knownTestPublicKeys contains public material only. Keep every key used by
+// tests and spikes here so renaming a key ID cannot make it release-trusted.
+var knownTestPublicKeys = [...][ed25519.PublicKeySize]byte{
+	// Public half of the deterministic key used by release-validation tests.
+	{0x79, 0xb5, 0x56, 0x2e, 0x8f, 0xe6, 0x54, 0xf9, 0x40, 0x78, 0xb1, 0x12, 0xe8, 0xa9, 0x8b, 0xa7, 0x90, 0x1f, 0x85, 0x3a, 0xe6, 0x95, 0xbe, 0xd7, 0xe0, 0xe3, 0x91, 0x0b, 0xad, 0x04, 0x96, 0x64},
+	// RFC 8032 test vector 1, used by origin/wails-spike.
+	{0xd7, 0x5a, 0x98, 0x01, 0x82, 0xb1, 0x0a, 0xb7, 0xd5, 0x4b, 0xfe, 0xd3, 0xc9, 0x64, 0x07, 0x3a, 0x0e, 0xe1, 0x72, 0xf3, 0xda, 0xa6, 0x23, 0x25, 0xaf, 0x02, 0x1a, 0x68, 0xf7, 0x07, 0x51, 0x1a},
+}
 
 type Manifest struct {
 	Version   string `json:"version"`
@@ -80,9 +90,6 @@ func VerifyManifest(manifest Manifest, currentVersion, expectedKeyID string, pub
 }
 
 func ReleasePublicKey(keyID, encoded string, release bool) (ed25519.PublicKey, error) {
-	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(keyID)), "test") && release {
-		return nil, errors.New("release build refuses a test update key")
-	}
 	if strings.TrimSpace(encoded) == "" {
 		if release {
 			return nil, errors.New("release build requires an injected update public key")
@@ -93,5 +100,19 @@ func ReleasePublicKey(keyID, encoded string, release bool) (ed25519.PublicKey, e
 	if err != nil || len(key) != ed25519.PublicKeySize || keyID == "" {
 		return nil, errors.New("invalid injected update public key")
 	}
+	if release {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(keyID)), "test") || isKnownTestPublicKey(key) {
+			return nil, ErrTestReleaseKey
+		}
+	}
 	return ed25519.PublicKey(key), nil
+}
+
+func isKnownTestPublicKey(key []byte) bool {
+	for _, denied := range knownTestPublicKeys {
+		if bytes.Equal(key, denied[:]) {
+			return true
+		}
+	}
+	return false
 }

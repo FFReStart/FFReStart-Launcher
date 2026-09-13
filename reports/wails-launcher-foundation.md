@@ -73,11 +73,13 @@ Met in this session:
 - A bounded download whose SHA-256 must match before bytes reach pinned
   go-selfupdate v1.6.0.
 - Tests for a valid apply, tampered manifests, tampered binaries, equal versions,
-  downgrades, missing release keys, and test-key refusal.
+  downgrades, missing release keys, and test-key refusal by both ID and decoded
+  public-key bytes even when a known test key is given a production-looking ID.
 - The production public key is empty in source and supplied to release builds
   as linker values. The only private key is deterministically constructed in a
   `_test.go` file and is explicitly named test-only. No real signing material is
-  present.
+  present. The release denylist contains only public bytes for that key and the
+  RFC 8032 key used by the Wails spike.
 
 Still open:
 

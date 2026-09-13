@@ -15,7 +15,7 @@ func main() {
 	}
 	keyID := os.Getenv("FFRESTART_UPDATE_KEY_ID")
 	publicKey := os.Getenv("FFRESTART_UPDATE_PUBLIC_KEY_HEX")
-	if _, err := launcherupdate.ReleasePublicKey(keyID, publicKey, true); err != nil {
+	if err := validateReleaseKey(keyID, publicKey); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -28,4 +28,9 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func validateReleaseKey(keyID, publicKey string) error {
+	_, err := launcherupdate.ReleasePublicKey(keyID, publicKey, true)
+	return err
 }
