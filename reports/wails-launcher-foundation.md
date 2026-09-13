@@ -96,6 +96,47 @@ Still open:
 Resumable downloads and rollback were intentionally left for the remaining WP9
 sessions rather than added without the staging and recovery design they need.
 
+## WP9 session 2: resumable updates and rollback
+
+Delivered in this session:
+
+- Launcher and game artifacts download to `.part` files with an atomically
+  persisted progress record. Retries use HTTP Range only when the partial file,
+  URL, signed size and signed SHA-256 still agree. A server that ignores Range
+  triggers a clean restart, while invalid ranges, truncation and oversized data
+  are rejected. A completed file is promoted only after its SHA-256 matches.
+- The launcher manifest now signs the artifact size as well as version, URL,
+  hash and key ID. The launcher retains `.previous`, restores it after an apply
+  error or failed bounded health check, and leaves only verified bytes eligible
+  for `go-selfupdate`.
+- A distinct signed game-file manifest carries the game version and each file's
+  relative path, URL, size and SHA-256. The patcher rejects traversal and
+  duplicate paths, installs verified files under the user's local app-data game
+  root, promotes an immutable version directory, and atomically changes a small
+  current-version record while retaining the previous version.
+- Failed game downloads do not change the current version. A failed post-update
+  health check atomically selects the retained previous version again.
+- `TestTwentyInterruptedDownloadsResume` proves 20/20 interrupted transfers
+  resume with Range and reproduce the signed bytes. Separate tests cover a
+  Range-ignoring server and a corrupted partial file that requires a clean
+  verified retry.
+- `TestOneThousandManifestMutationsAreRejected` rejects 1,000/1,000 mutations
+  across signature, version, size, hash, URL and key ID.
+- Launcher and game rollback tests restore the known-good version well under
+  the 30-second ceiling. The WP32 unavailable-update invariant remains in the
+  test suite: offline play starts without awaiting the background update check.
+- Local verification passed `just check`, the focused update and rollback
+  tests, 20 repeated runs of the 20/20 unavailable-network launch test, a
+  Windows Wails build, and the Dockerized Linux WebKitGTK 4.1 build.
+
+Still open for WP9:
+
+- Delta patching, if release sizes show that it is needed.
+- The protected release-environment signing ceremony, which requires human
+  approval and real release infrastructure; no private signing material belongs
+  in this public repository.
+- The three-OS signature matrix, scheduled for WP26.
+
 ## Follow-on packages
 
 WP8 must add optional multiplayer without changing the offline default: RFC
