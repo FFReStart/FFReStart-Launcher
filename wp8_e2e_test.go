@@ -130,6 +130,7 @@ func TestWP8DockerEndToEnd(t *testing.T) {
 	app := NewApp(launcher, nil)
 	app.ConfigureExperience(&settingsStore{path: filepath.Join(t.TempDir(), "settings.json")}, settings, settings.InstallDirectory, &auth.MemoryStore{})
 	app.ConfigureInstaller(nil, "", client)
+	app.ConfigureIdentityClient(client)
 	app.ConfigureMultiplayerBuild(1, strings.Repeat("0", 64))
 	app.startup(context.Background())
 	app.openBrowser = func(location string) error {

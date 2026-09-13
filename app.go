@@ -20,25 +20,26 @@ import (
 // App is the narrow JavaScript-to-Go boundary. Token values never appear in a
 // bound argument, return value, event, log message, environment or argv.
 type App struct {
-	ctx           context.Context
-	launcher      *launch.Service
-	tokens        auth.TokenVault
-	refreshStore  auth.RefreshStore
-	installer     *patch.Installer
-	developer     *patch.DeveloperInstaller
-	manifestURL   string
-	client        *http.Client
-	settingsStore *settingsStore
-	settings      LauncherSettings
-	defaultRoot   string
-	protocol      uint32
-	buildHash     string
-	quit          func()
-	openBrowser   func(string) error
-	devicePrompt  func(auth.DevicePrompt) error
-	stateChanged  func()
-	devicePoll    time.Duration
-	authMu        sync.Mutex
+	ctx            context.Context
+	launcher       *launch.Service
+	tokens         auth.TokenVault
+	refreshStore   auth.RefreshStore
+	installer      *patch.Installer
+	developer      *patch.DeveloperInstaller
+	manifestURL    string
+	downloadClient *http.Client
+	identityClient *http.Client
+	settingsStore  *settingsStore
+	settings       LauncherSettings
+	defaultRoot    string
+	protocol       uint32
+	buildHash      string
+	quit           func()
+	openBrowser    func(string) error
+	devicePrompt   func(auth.DevicePrompt) error
+	stateChanged   func()
+	devicePoll     time.Duration
+	authMu         sync.Mutex
 
 	mu                   sync.RWMutex
 	status               GameStatus
@@ -96,10 +97,11 @@ func NewApp(launcher *launch.Service, tokens auth.TokenVault) *App {
 	return app
 }
 func (a *App) ConfigureInstaller(installer *patch.Installer, manifestURL string, client *http.Client) {
-	a.installer, a.manifestURL, a.client = installer, manifestURL, client
+	a.installer, a.manifestURL, a.downloadClient = installer, manifestURL, client
 }
-func (a *App) configureQuit(quit func())           { a.quit = quit }
-func (a *App) configureStateChanged(notify func()) { a.stateChanged = notify }
+func (a *App) ConfigureIdentityClient(client *http.Client) { a.identityClient = client }
+func (a *App) configureQuit(quit func())                   { a.quit = quit }
+func (a *App) configureStateChanged(notify func())         { a.stateChanged = notify }
 func (a *App) configureDeveloperInstaller(installer *patch.DeveloperInstaller) {
 	a.developer = installer
 	if installer != nil {
@@ -249,7 +251,7 @@ func (a *App) InstallOrUpdate() error {
 	a.setStatus(GameStatus{Installed: installed, Busy: true, Title: title, Message: message, Version: "WORKING", Progress: -1})
 	var err error
 	if a.manifestURL != "" {
-		err = a.installer.FetchAndInstall(a.ctx, a.client, a.manifestURL)
+		err = a.installer.FetchAndInstall(a.ctx, a.downloadClient, a.manifestURL)
 	} else {
 		_, err = a.developer.InstallOrUpdate(a.ctx)
 	}
@@ -388,7 +390,7 @@ func (a *App) SignInBrowser(remember bool) error {
 		}
 	}
 	scopes := signInScopes(config.Scopes, remember)
-	tokens, err := auth.BrowserLogin(ctx, auth.BrowserConfig{Issuer: config.Issuer, ClientID: config.LauncherClientID, AuthURL: config.Issuer + "/oauth/v2/authorize", TokenURL: config.Issuer + "/oauth/v2/token", Scopes: scopes, Client: a.client}, a.openBrowser)
+	tokens, err := auth.BrowserLogin(ctx, auth.BrowserConfig{Issuer: config.Issuer, ClientID: config.LauncherClientID, AuthURL: config.Issuer + "/oauth/v2/authorize", TokenURL: config.Issuer + "/oauth/v2/token", Scopes: scopes, Client: a.identityClient}, a.openBrowser)
 	if err != nil {
 		return err
 	}
@@ -402,7 +404,7 @@ func (a *App) SignInWithCode(remember bool) error {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 10*time.Minute)
 	defer cancel()
-	tokens, err := auth.DeviceLogin(ctx, auth.DeviceConfig{ClientID: config.DeviceClientID, DeviceURL: config.Issuer + "/oauth/v2/device_authorization", TokenURL: config.Issuer + "/oauth/v2/token", Scopes: signInScopes(config.Scopes, remember), Client: a.client, PollInterval: a.devicePoll}, a.devicePrompt)
+	tokens, err := auth.DeviceLogin(ctx, auth.DeviceConfig{ClientID: config.DeviceClientID, DeviceURL: config.Issuer + "/oauth/v2/device_authorization", TokenURL: config.Issuer + "/oauth/v2/token", Scopes: signInScopes(config.Scopes, remember), Client: a.identityClient, PollInterval: a.devicePoll}, a.devicePrompt)
 	if err != nil {
 		return err
 	}
@@ -473,7 +475,7 @@ func (a *App) refreshTransient(ctx context.Context, refreshToken, flow string) (
 	if err := store.Save(refreshToken); err != nil {
 		return auth.Tokens{}, err
 	}
-	return auth.RefreshWithClient(ctx, config.Issuer+"/oauth/v2/token", clientID, store, a.client)
+	return auth.RefreshWithClient(ctx, config.Issuer+"/oauth/v2/token", clientID, store, a.identityClient)
 }
 
 func (a *App) SignOut() error {
@@ -592,7 +594,7 @@ func (a *App) restoreSessionLocked(ctx context.Context) error {
 	} else if flow != "browser" {
 		return auth.ErrReauthenticationRequired
 	}
-	tokens, err := auth.RefreshWithClient(ctx, config.Issuer+"/oauth/v2/token", clientID, a.refreshStore, a.client)
+	tokens, err := auth.RefreshWithClient(ctx, config.Issuer+"/oauth/v2/token", clientID, a.refreshStore, a.identityClient)
 	if err != nil {
 		if errors.Is(err, auth.ErrReauthenticationRequired) {
 			a.clearSession()
@@ -628,7 +630,7 @@ func (a *App) multiplayerClient() (*multiplayer.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return multiplayer.New(multiplayer.Config{BaseURL: config.ControlAPIBaseURL, BootstrapURL: config.BootstrapURL, Client: a.client})
+	return multiplayer.New(multiplayer.Config{BaseURL: config.ControlAPIBaseURL, BootstrapURL: config.BootstrapURL, Client: a.identityClient})
 }
 
 func (a *App) saveSettings(settings LauncherSettings) error {

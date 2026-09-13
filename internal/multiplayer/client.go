@@ -94,7 +94,7 @@ func New(config Config) (*Client, error) {
 	}
 	client := config.Client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		return nil, errors.New("identity HTTP client is required")
 	}
 	bootstrapURL := strings.TrimSpace(config.BootstrapURL)
 	if bootstrapURL == "" {

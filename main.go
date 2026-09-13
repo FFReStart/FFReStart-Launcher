@@ -104,6 +104,7 @@ func main() {
 	launcher.SetUpdateTimeout(1500 * time.Millisecond)
 	refresh := &auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}}
 	app := NewApp(launcher, refresh)
+	app.ConfigureIdentityClient(newIdentityHTTPClient())
 	app.configureQuit(func() { wailsruntime.Quit(app.ctx) })
 	app.configureStateChanged(func() { wailsruntime.EventsEmit(app.ctx, "auth:state-changed") })
 	app.ConfigureInstaller(installer, os.Getenv("FFRESTART_GAME_MANIFEST_URL"), nil)
@@ -130,6 +131,15 @@ func main() {
 		Bind:             []interface{}{app},
 	}); err != nil {
 		log.Print(err)
+	}
+}
+
+func newIdentityHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 

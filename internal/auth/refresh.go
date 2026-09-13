@@ -12,11 +12,10 @@ import (
 
 var ErrReauthenticationRequired = errors.New("fresh sign-in required")
 
-func Refresh(ctx context.Context, tokenURL, clientID string, store RefreshStore) (Tokens, error) {
-	return RefreshWithClient(ctx, tokenURL, clientID, store, nil)
-}
-
 func RefreshWithClient(ctx context.Context, tokenURL, clientID string, store RefreshStore, client *http.Client) (Tokens, error) {
+	if client == nil {
+		return Tokens{}, errors.New("identity HTTP client is required")
+	}
 	refreshToken, err := store.Load()
 	if err != nil {
 		return Tokens{}, err
@@ -24,9 +23,6 @@ func RefreshWithClient(ctx context.Context, tokenURL, clientID string, store Ref
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	if client == nil {
-		client = http.DefaultClient
-	}
 	response, err := client.Do(request)
 	if err != nil {
 		return Tokens{}, err

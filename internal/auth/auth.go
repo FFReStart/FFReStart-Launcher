@@ -42,9 +42,10 @@ func randomURLSafe(size int) (string, error) {
 
 // BrowserLogin uses an external browser, loopback redirect, S256 PKCE, state and nonce.
 func BrowserLogin(ctx context.Context, config BrowserConfig, open func(string) error) (Tokens, error) {
-	if config.Client != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, config.Client)
+	if config.Client == nil {
+		return Tokens{}, errors.New("identity HTTP client is required")
 	}
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, config.Client)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return Tokens{}, err
@@ -122,10 +123,10 @@ func DeviceLogin(ctx context.Context, config DeviceConfig, show func(DevicePromp
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "offline_access"}
 	}
-	client := config.Client
-	if client == nil {
-		client = http.DefaultClient
+	if config.Client == nil {
+		return Tokens{}, errors.New("identity HTTP client is required")
 	}
+	client := config.Client
 	form := url.Values{"client_id": {config.ClientID}, "scope": {strings.Join(scopes, " ")}}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, config.DeviceURL, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")

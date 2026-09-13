@@ -204,6 +204,7 @@ func TestDeviceSignInRefreshTicketAndHandoff(t *testing.T) {
 	app := NewApp(launcher, nil)
 	app.ConfigureExperience(store, settings, settings.InstallDirectory, refreshStore)
 	app.ConfigureInstaller(nil, "", server.Client())
+	app.ConfigureIdentityClient(server.Client())
 	app.ConfigureMultiplayerBuild(1, strings.Repeat("a", 64))
 	app.devicePoll = time.Millisecond
 	app.devicePrompt = func(prompt auth.DevicePrompt) error {
