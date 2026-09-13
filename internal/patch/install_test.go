@@ -12,6 +12,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -30,7 +32,7 @@ func signedGameManifest(t *testing.T, version, path, artifactURL string, content
 	t.Helper()
 	sum := sha256.Sum256(content)
 	manifest := Manifest{Version: version, KeyID: gameTestKeyID, Files: []File{{Path: path, URL: artifactURL, Size: int64(len(content)), SHA256: hex.EncodeToString(sum[:])}}}
-	signed, err := manifest.signedBytes()
+	signed, err := manifest.SigningBytes()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,5 +104,46 @@ func TestSignedGameManifestRejectsChangedFileMetadata(t *testing.T) {
 	manifest.Files[0].Size++
 	if err := VerifyManifest(manifest, gameTestKeyID, gameTestPrivateKey().Public().(ed25519.PublicKey)); !errors.Is(err, ErrInvalidSignature) {
 		t.Fatalf("error = %v, want signature rejection", err)
+	}
+}
+
+func TestWindowsManifestPathsRejectCollisionsAndDevices(t *testing.T) {
+	for _, files := range [][]File{
+		{{Path: "Data/Game.dll", URL: "https://updates.example/a", Size: 1, SHA256: strings.Repeat("0", 64)}, {Path: "data/game.DLL", URL: "https://updates.example/b", Size: 1, SHA256: strings.Repeat("1", 64)}},
+		{{Path: "bin/CON.txt", URL: "https://updates.example/a", Size: 1, SHA256: strings.Repeat("0", 64)}},
+		{{Path: "aux/config", URL: "https://updates.example/a", Size: 1, SHA256: strings.Repeat("0", 64)}},
+		{{Path: "COM1.dll", URL: "https://updates.example/a", Size: 1, SHA256: strings.Repeat("0", 64)}},
+	} {
+		manifest := Manifest{Version: "v1.0.0", KeyID: gameTestKeyID, Files: files, Signature: base64.RawStdEncoding.EncodeToString(make([]byte, ed25519.SignatureSize))}
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ParseManifestForTarget(data, "windows", false); !errors.Is(err, ErrInvalidManifest) {
+			t.Fatalf("files %#v: error = %v, want rejection", files, err)
+		}
+	}
+}
+
+func TestReleaseGameManifestRequiresHTTPS(t *testing.T) {
+	data := signedGameManifest(t, "v1.0.0", "game", "http://updates.example/game", []byte("game"))
+	if _, err := ParseManifestForTarget(data, "linux", false); !errors.Is(err, ErrInvalidManifest) {
+		t.Fatalf("error = %v, want insecure URL rejection", err)
+	}
+	if _, err := ParseManifestForTarget(data, "linux", true); err != nil {
+		t.Fatalf("local development HTTP rejected: %v", err)
+	}
+}
+
+func TestReleaseInstallerRejectsHTTPManifestURL(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	defer server.Close()
+	installer := Installer{Root: t.TempDir(), Release: true}
+	if err := installer.FetchAndInstall(context.Background(), server.Client(), server.URL); !errors.Is(err, ErrInvalidManifest) {
+		t.Fatalf("error = %v, want insecure manifest URL rejection", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("HTTP manifest service received %d requests", got)
 	}
 }

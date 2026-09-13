@@ -3,6 +3,7 @@ package launch
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,3 +68,36 @@ func TestNetworkUnavailableAllowsTwentyOfTwentyLaunches(t *testing.T) {
 type UpdateCheckerFunc func(context.Context) error
 
 func (f UpdateCheckerFunc) Check(ctx context.Context) error { return f(ctx) }
+
+type installedGamePath string
+
+func (p installedGamePath) CurrentPath() (string, error) { return string(p), nil }
+
+func TestOfflineLaunchUsesInstalledCurrentVersion(t *testing.T) {
+	var startedPath string
+	svc := NewService("", FuncStarter(func(_ context.Context, path string, _ ...string) error {
+		startedPath = path
+		return nil
+	}), nil)
+	svc.SetInstalledGame(installedGamePath(filepath.Join("game", "versions", "2.0.0")), "bin/FFReStart.exe")
+	if err := svc.PlayOffline(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join("game", "versions", "2.0.0", "bin", "FFReStart.exe")
+	if startedPath != want {
+		t.Fatalf("started path = %q, want %q", startedPath, want)
+	}
+}
+
+func TestDevelopmentPathOverridesInstalledVersion(t *testing.T) {
+	svc := NewService(filepath.Join("dev", "game.exe"), FuncStarter(func(context.Context, string, ...string) error { return nil }), nil)
+	svc.SetInstalledGame(installedGamePath(filepath.Join("game", "versions", "2.0.0")), "FFReStart.exe")
+	resolved, err := svc.ResolvedGamePath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.Abs(filepath.Join("dev", "game.exe"))
+	if resolved != want {
+		t.Fatalf("resolved path = %q, want %q", resolved, want)
+	}
+}

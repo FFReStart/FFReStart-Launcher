@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,6 +26,7 @@ type Installer struct {
 	PublicKey   ed25519.PublicKey
 	Downloader  update.Downloader
 	HealthCheck func(context.Context, string) error
+	Release     bool
 }
 
 func DefaultGameRoot() (string, error) {
@@ -36,7 +38,7 @@ func DefaultGameRoot() (string, error) {
 }
 
 func (i Installer) Install(ctx context.Context, manifestData []byte) error {
-	manifest, err := ParseManifest(manifestData)
+	manifest, err := ParseManifestForTarget(manifestData, runtime.GOOS, !i.Release)
 	if err != nil {
 		return err
 	}

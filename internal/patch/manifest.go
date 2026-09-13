@@ -11,7 +11,8 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path/filepath"
+	"path"
+	"runtime"
 	"strings"
 
 	"golang.org/x/mod/semver"
@@ -38,6 +39,25 @@ type Manifest struct {
 }
 
 func ParseManifest(data []byte) (Manifest, error) {
+	return ParseManifestForTarget(data, runtime.GOOS, true)
+}
+
+// ParseManifestForTarget validates paths for the target operating system.
+// allowHTTP exists only for local development and tests.
+func ParseManifestForTarget(data []byte, targetOS string, allowHTTP bool) (Manifest, error) {
+	manifest, err := ParseUnsignedManifestForTarget(data, targetOS, allowHTTP)
+	if err != nil {
+		return Manifest{}, err
+	}
+	if signature, err := base64.RawStdEncoding.DecodeString(manifest.Signature); err != nil || len(signature) != ed25519.SignatureSize {
+		return Manifest{}, ErrInvalidManifest
+	}
+	return manifest, nil
+}
+
+// ParseUnsignedManifestForTarget validates an unsigned signing input while
+// preserving the file order that is covered by the signature.
+func ParseUnsignedManifestForTarget(data []byte, targetOS string, allowHTTP bool) (Manifest, error) {
 	if len(data) == 0 || len(data) > 1<<20 {
 		return Manifest{}, ErrInvalidManifest
 	}
@@ -56,26 +76,46 @@ func ParseManifest(data []byte) (Manifest, error) {
 	}
 	seen := make(map[string]struct{}, len(manifest.Files))
 	for _, file := range manifest.Files {
-		clean := filepath.Clean(filepath.FromSlash(file.Path))
+		clean := path.Clean(file.Path)
 		parsedURL, err := url.ParseRequestURI(file.URL)
-		_, duplicate := seen[clean]
+		comparisonPath := clean
+		if targetOS == "windows" {
+			comparisonPath = strings.ToLower(clean)
+		}
+		_, duplicate := seen[comparisonPath]
 		unsafePath := strings.ContainsAny(file.Path, "\\:\x00")
-		if err != nil || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") || parsedURL.Host == "" || unsafePath || clean == "." || filepath.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) || duplicate || file.Size <= 0 || file.Size > 256<<20 {
+		if err != nil || !allowedRemoteURL(parsedURL, allowHTTP) || unsafePath || clean == "." || path.IsAbs(clean) || clean == ".." || strings.HasPrefix(clean, "../") || duplicate || (targetOS == "windows" && invalidWindowsPath(clean)) || file.Size <= 0 || file.Size > 256<<20 {
 			return Manifest{}, ErrInvalidManifest
 		}
 		hash, err := hex.DecodeString(file.SHA256)
 		if err != nil || len(hash) != sha256.Size {
 			return Manifest{}, ErrInvalidManifest
 		}
-		seen[clean] = struct{}{}
-	}
-	if signature, err := base64.RawStdEncoding.DecodeString(manifest.Signature); err != nil || len(signature) != ed25519.SignatureSize {
-		return Manifest{}, ErrInvalidManifest
+		seen[comparisonPath] = struct{}{}
 	}
 	return manifest, nil
 }
 
-func (m Manifest) signedBytes() ([]byte, error) {
+func allowedRemoteURL(parsedURL *url.URL, allowHTTP bool) bool {
+	return parsedURL.Host != "" && (parsedURL.Scheme == "https" || (allowHTTP && parsedURL.Scheme == "http"))
+}
+
+func invalidWindowsPath(filePath string) bool {
+	for _, component := range strings.Split(filePath, "/") {
+		if component == "" || strings.HasSuffix(component, ".") || strings.HasSuffix(component, " ") {
+			return true
+		}
+		stem := strings.ToUpper(strings.TrimRight(strings.SplitN(component, ".", 2)[0], " ."))
+		switch stem {
+		case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9", "COM¹", "COM²", "COM³", "LPT¹", "LPT²", "LPT³":
+			return true
+		}
+	}
+	return false
+}
+
+// SigningBytes returns the exact canonical JSON covered by the signature.
+func (m Manifest) SigningBytes() ([]byte, error) {
 	unsigned := struct {
 		Version string `json:"version"`
 		KeyID   string `json:"key_id"`
@@ -88,7 +128,7 @@ func VerifyManifest(manifest Manifest, expectedKeyID string, publicKey ed25519.P
 	if manifest.KeyID != expectedKeyID || len(publicKey) != ed25519.PublicKeySize {
 		return ErrInvalidSignature
 	}
-	signed, err := manifest.signedBytes()
+	signed, err := manifest.SigningBytes()
 	if err != nil {
 		return ErrInvalidManifest
 	}

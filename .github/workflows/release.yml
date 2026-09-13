@@ -1,79 +1,143 @@
-name: Build and release launcher
+name: Protected release build and signing
 
 on:
-  push:
-    tags:
-      - "v[0-9]*"
-      - "[0-9]*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: SemVer release version, including the leading v
+        required: true
+        type: string
+      launcher_key_id:
+        description: Active launcher-manifest key identifier
+        required: true
+        type: string
+      game_key_id:
+        description: Active game-manifest key identifier
+        required: true
+        type: string
+      launcher_url:
+        description: Final HTTPS URL for the Windows launcher artifact
+        required: true
+        type: string
+      game_manifest_path:
+        description: Repository path to the unsigned game manifest
+        required: true
+        type: string
+      game_target_os:
+        description: Target OS whose paths the game manifest contains
+        required: true
+        default: windows
+        type: choice
+        options:
+          - windows
+          - linux
+          - darwin
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Build Windows x64 release
-    runs-on: windows-latest
-
+  build:
+    name: Build unsigned release inputs
+    runs-on: windows-2025
+    env:
+      FFRESTART_UPDATE_KEY_ID: ${{ inputs.launcher_key_id }}
+      FFRESTART_UPDATE_PUBLIC_KEY_HEX: ${{ vars.UPDATE_PUBLIC_KEY_HEX }}
+      FFRESTART_GAME_KEY_ID: ${{ inputs.game_key_id }}
+      FFRESTART_GAME_PUBLIC_KEY_HEX: ${{ vars.GAME_PUBLIC_KEY_HEX }}
     steps:
-      - name: Check out tagged commit
-        uses: actions/checkout@v4
-
-      - name: Set up .NET 8
-        uses: actions/setup-dotnet@v4
+      - name: Check out selected ref
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          dotnet-version: 8.0.x
-
-      - name: Validate version tag
-        id: version
+          go-version: 1.27.1
+          cache: true
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .node-version
+      - name: Require production public keys
         shell: pwsh
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          $version = $env:RELEASE_TAG -replace '^v', ''
-          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-            throw "Tag '$env:RELEASE_TAG' is not a supported version. Use 1.2.3 or v1.2.3 (optionally with a prerelease suffix)."
+          if ([string]::IsNullOrWhiteSpace($env:FFRESTART_UPDATE_PUBLIC_KEY_HEX) -or [string]::IsNullOrWhiteSpace($env:FFRESTART_GAME_PUBLIC_KEY_HEX)) {
+            throw "Set UPDATE_PUBLIC_KEY_HEX and GAME_PUBLIC_KEY_HEX repository variables before releasing."
           }
-          "number=$version" >> $env:GITHUB_OUTPUT
-
-      - name: Publish self-contained launcher
+      - name: Build frontend and release tools
+        shell: pwsh
+        run: |
+          npm install --global pnpm@9.15.1
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build
+          go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+          New-Item -ItemType Directory -Force -Path release-input | Out-Null
+          go build -trimpath -o release-input/signmanifest.exe ./cmd/signmanifest
+          go run ./cmd/releasebuild windows/amd64
+          Copy-Item -LiteralPath build/bin/ffrestart-launcher.exe -Destination release-input/ffrestart-launcher.exe
+      - name: Prepare unsigned manifests
         shell: pwsh
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_VERSION: ${{ steps.version.outputs.number }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          LAUNCHER_URL: ${{ inputs.launcher_url }}
+          GAME_MANIFEST_PATH: ${{ inputs.game_manifest_path }}
         run: |
-          dotnet publish "GameLauncher/FFReStart GameLauncher.csproj" `
-            --configuration Release `
-            --runtime win-x64 `
-            --self-contained true `
-            --output publish `
-            -p:PublishSingleFile=true `
-            -p:IncludeNativeLibrariesForSelfExtract=true `
-            -p:EnableCompressionInSingleFile=true `
-            -p:DebugType=None `
-            -p:DebugSymbols=false `
-            -p:Version=$env:RELEASE_VERSION
-
-          New-Item -ItemType Directory -Force -Path release | Out-Null
-          Move-Item `
-            -LiteralPath "publish/FFReStart GameLauncher.exe" `
-            -Destination "release/FFReStart-Launcher-$env:RELEASE_TAG-win-x64.exe"
-
-      - name: Create GitHub Release and upload executable
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          $tag = $env:RELEASE_TAG
-          $asset = "release/FFReStart-Launcher-$tag-win-x64.exe"
-
-          gh release view $tag --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $asset --clobber --repo $env:GITHUB_REPOSITORY
-          } else {
-            gh release create $tag $asset `
-              --verify-tag `
-              --generate-notes `
-              --title "FFReStart Launcher $tag" `
-              --repo $env:GITHUB_REPOSITORY
+          if (-not (Test-Path -LiteralPath $env:GAME_MANIFEST_PATH -PathType Leaf)) {
+            throw "The unsigned game manifest does not exist at the requested repository path."
           }
+          $launcher = Get-Item -LiteralPath release-input/ffrestart-launcher.exe
+          $sha = (Get-FileHash -LiteralPath $launcher.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          @{
+            version = $env:RELEASE_VERSION
+            url = $env:LAUNCHER_URL
+            size = $launcher.Length
+            sha256 = $sha
+            key_id = $env:FFRESTART_UPDATE_KEY_ID
+          } | ConvertTo-Json | Set-Content -LiteralPath release-input/launcher-manifest.unsigned.json -Encoding utf8NoBOM
+          Copy-Item -LiteralPath $env:GAME_MANIFEST_PATH -Destination release-input/game-manifest.unsigned.json
+      - name: Upload unsigned release inputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-release-inputs
+          path: release-input/
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    name: Sign approved release manifests
+    needs: build
+    runs-on: windows-2025
+    environment: release
+    env:
+      LAUNCHER_MANIFEST_PRIVATE_KEY: ${{ secrets.LAUNCHER_MANIFEST_PRIVATE_KEY }}
+      GAME_MANIFEST_PRIVATE_KEY: ${{ secrets.GAME_MANIFEST_PRIVATE_KEY }}
+      UPDATE_PUBLIC_KEY_HEX: ${{ vars.UPDATE_PUBLIC_KEY_HEX }}
+      GAME_PUBLIC_KEY_HEX: ${{ vars.GAME_PUBLIC_KEY_HEX }}
+    steps:
+      - name: Download unsigned release inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: unsigned-release-inputs
+          path: release
+      - name: Require protected signing secrets
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:LAUNCHER_MANIFEST_PRIVATE_KEY) -or [string]::IsNullOrWhiteSpace($env:GAME_MANIFEST_PRIVATE_KEY)) {
+            throw "The release environment is missing a manifest signing secret. Complete the signing ceremony before releasing."
+          }
+      - name: Sign and verify manifests
+        shell: pwsh
+        env:
+          GAME_TARGET_OS: ${{ inputs.game_target_os }}
+        run: |
+          release/signmanifest.exe sign -type launcher -manifest release/launcher-manifest.unsigned.json -output release/launcher-manifest.json -key-env LAUNCHER_MANIFEST_PRIVATE_KEY
+          release/signmanifest.exe verify -type launcher -manifest release/launcher-manifest.json -key-env UPDATE_PUBLIC_KEY_HEX
+          release/signmanifest.exe sign -type game -target-os $env:GAME_TARGET_OS -manifest release/game-manifest.unsigned.json -output release/game-manifest.json -key-env GAME_MANIFEST_PRIVATE_KEY
+          release/signmanifest.exe verify -type game -target-os $env:GAME_TARGET_OS -manifest release/game-manifest.json -key-env GAME_PUBLIC_KEY_HEX
+          Remove-Item -LiteralPath release/signmanifest.exe, release/launcher-manifest.unsigned.json, release/game-manifest.unsigned.json
+      - name: Upload signed release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ffrestart-${{ inputs.version }}-${{ inputs.game_target_os }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30

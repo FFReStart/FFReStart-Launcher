@@ -16,5 +16,8 @@ input { width: 100%; padding: 12px; color: #eef7ff; border: 1px solid #53708e; b
 .panel button { width: 100%; border: 0; border-radius: 10px; padding: 13px 16px; margin-top: 11px; cursor: pointer; font-weight: 700; }
 .secondary { color: #eaf6ff; background: #263a52; }
 .play { color: white; background: #7b4feb; }
-.play:disabled { opacity: .45; cursor: wait; }
+.play:disabled, button:disabled { opacity: .45; cursor: wait; }
+.update-status { min-height: 42px; color: #b8cade; line-height: 1.5; }
+.settings { margin-top: 24px; border-top: 1px solid #53708e55; padding-top: 18px; }
+.settings summary { margin-bottom: 14px; color: #9eb1c6; cursor: pointer; }
 #status { min-height: 42px; margin: 20px 2px 0; color: #9eb1c6; font-size: 14px; line-height: 1.5; }
