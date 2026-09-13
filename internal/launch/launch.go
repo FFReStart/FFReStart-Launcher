@@ -35,6 +35,7 @@ type ExecStarter struct{}
 func (ExecStarter) Start(_ context.Context, path string, args ...string) error {
 	// #nosec G204 -- path is the executable explicitly configured by the local user.
 	cmd := exec.Command(path, args...)
+	cmd.Dir = filepath.Dir(path)
 	return cmd.Start()
 }
 

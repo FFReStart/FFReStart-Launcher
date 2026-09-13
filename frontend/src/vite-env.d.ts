@@ -11,16 +11,16 @@ interface LauncherBackend {
   ChooseInstallDirectory(): Promise<LauncherState>;
   ResetInstallDirectory(): Promise<LauncherState>;
   SaveMusicPreferences(volume: number, muted: boolean): Promise<void>;
-  OpenCommunity(): void;
-  OpenSupport(): void;
-  OpenGameFiles(): void;
+  OpenCommunity(): Promise<void>;
+  OpenSupport(): Promise<void>;
+  OpenGameFiles(): Promise<void>;
   SignInBrowser(): Promise<void>;
   SignInWithCode(): Promise<void>;
   SignOut(): Promise<void>;
 }
 
 interface GameStatus { installed:boolean; busy:boolean; message:string; title:string; version:string; progress:number }
-interface LauncherState { game:GameStatus; installDirectory:string; defaultInstallDirectory:string; setupComplete:boolean; musicVolume:number; musicMuted:boolean; musicAvailable:boolean; multiplayerConfigured:boolean; signedIn:boolean }
+interface LauncherState { game:GameStatus; installDirectory:string; defaultInstallDirectory:string; setupComplete:boolean; musicVolume:number; musicMuted:boolean; musicAvailable:boolean; multiplayerConfigured:boolean; signedIn:boolean; updateChannel:string; developerChannel:boolean }
 interface DevicePrompt { verificationUri:string; verificationUriComplete:string; userCode:string }
 
 interface Window {

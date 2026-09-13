@@ -216,6 +216,13 @@ notarization, stapling, and validation on a dedicated Mac runner.
 
 ## Original-launcher experience parity
 
+> **OWNER APPROVAL REQUIRED:** when no signed game manifest is configured, the
+> launcher exposes the original **unsigned developer build channel**. It is
+> intentionally weaker than D13/WP9's signed design, although it is no weaker
+> than the WPF launcher it replaces. Configuring a signed game manifest disables
+> this compatibility channel automatically. Offline play never waits for either
+> update channel.
+
 The WPF reference for this comparison is the owner's read-only
 `0-zach/launcher-auth-ui-integration` branch at `b01c8a3`. Only assets already
 public on `origin/main` are used. The private MP3 remains outside Git and is
@@ -236,13 +243,13 @@ loaded from the user's local app-data directory.
 | Brand header and guest/signed-in pilot chip | Ported | Account state contains display state only; no credential reaches TypeScript. |
 | Hero welcome label and fight-for-the-future headline | Ported | Placement and condensed uppercase treatment match the reference. |
 | First-run setup | Ported | A modal explains offline/account behavior and confirms or changes the install root before continuing. |
-| Install-location selection, default reset and persistence | Ported | Go validates writability, persists settings atomically and makes the selected directory the WP9 patch root. |
-| Executable discovery | Ported | Expected signed-install paths are preferred, with a bounded install-tree fallback that excludes launcher and Unity crash-handler binaries. |
+| Install-location selection, default reset and persistence | Ported | The default is the original `%LOCALAPPDATA%\FFReStart` root. Settings migrate PR 6's exact obsolete `FFReStart\game` default back to that root without changing custom locations. The native chooser starts at the selected directory or its nearest existing parent, so a missing folder cannot break Change. |
+| Executable discovery | Ported | Signed installs remain preferred; the exact legacy `FFReStart-Dev-Build\FFReStart-Dev-Build.exe` layout is detected in the chosen root, launched with that folder as its working directory, and falls back to safe bounded discovery. |
 | Checking, ready, offline-ready, failure, download and install states | Ported | The mission card, dot, version badge, action label and status copy change together. Existing installs remain playable after update failures. |
-| Install/update progress | Changed | The signed/resumable WP9 downloader exposes an indeterminate active indicator; byte-level callbacks are deferred until the downloader has a concurrency-safe observer API. |
+| Install/update progress | Ported | The unsigned developer download reports byte progress when GitHub supplies a length; the signed/resumable WP9 channel retains its indeterminate active indicator. |
 | Play button retry/install/launch behavior | Changed | Offline play is the primary ready action. When no game exists, the same primary control invokes the signed installer. |
 | Offline launch during unavailable updates | Ported | The no-auth, non-blocking path and its 20/20 test remain unchanged. |
-| Discord, support and game-files actions | Ported | Native backend opens external destinations; game files use the persisted root. |
+| Discord, support and game-files actions | Ported | Discord maps exactly to `Q5je3v9Bjg`, Support to `VNVjmPn2Fn`, and Game Files creates then opens the persisted root with `explorer.exe`, `open`, or `xdg-open` using one explicit argument and no shell. Failures appear in the error banner. |
 | Persisted launcher settings | Ported | Versioned JSON is written atomically under the per-user local app-data directory; it contains no credential material. |
 | Theme autoplay, loop, volume and mute | Ported | HTML audio uses the persisted 35% default and local-only MP3 endpoint, with a silent missing-file fallback. |
 | Embedded private theme asset | Changed | Deliberately excluded. `scripts/install-local-music.ps1` uses read-only `git show` to install it at `%LOCALAPPDATA%\FFReStart\launcher\audio`. |
@@ -251,11 +258,28 @@ loaded from the user's local app-data directory.
 | Multiplayer launch after sign-in | Deferred | UI clearly says unavailable until WP7 tickets and WP8 game hand-off exist. Sign-in is optional and never gates offline play. |
 | Authentication token passed in argv | Changed | No token is passed today. The approved future path is one length-delimited hand-off over stdin with only `--auth-token-stdin` in argv. |
 | Preview-only WPF mode | Deferred | The production Wails layout is directly previewable through the frontend dev server; a separate runtime preview flag adds no user-facing capability. |
-| WPF zip updater and version text file | Changed | Replaced by the existing signed, resumable, rollback-capable WP9 manifest installer and immutable version selection. |
+| WPF zip updater and version text file | Changed | Restored as an explicitly labelled unsigned developer compatibility channel using the two exact pinned GitHub release URLs. Redirects are restricted to GitHub release-asset hosts; archive and entry sizes are bounded; zip traversal and symlinks are rejected; staging is atomically promoted with a retained `.previous` rollback. `Version.txt` uses the original three-part numeric comparison and is displayed as `vX.Y.Z`. A configured signed manifest disables this channel. |
+
+### Control audit
+
+| Control | Result | Failure or disabled-state communication |
+|---|---|---|
+| Music mute and volume | Working | Disabled only when the local private track is absent; the panel and setting explain how to install it. Persistence failures use the visible error banner. |
+| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when ZITADEL is unconfigured or the pilot is already signed in. Multiplayer remains labelled unavailable pending WP7/WP8. |
+| Sign out | Working | Visible only for a signed-in pilot; keyring failures use the error banner. |
+| Play / Install or Update | Working | Plays the detected legacy or signed install offline. With no install it invokes the configured channel. Busy state disables it with a wait tooltip; all failures remain visible. |
+| Check for Updates | Working | Uses the signed channel when configured, otherwise the clearly labelled unsigned developer channel. Busy state explains why it is disabled. |
+| Discord and Support | Working | Use the original exact mapping; OS-open failures use the error banner. |
+| Game Files | Working | Creates and opens the install root, not the build subfolder; OS-open and filesystem failures use the error banner. |
+| Default, Change, and setup/settings folder controls | Working | Change uses the nearest existing chooser directory. All location controls are disabled during installation with an explanatory tooltip. |
+| First-run Continue | Working | Persists completion; it is disabled during installation and save failures use the error banner. |
+| Settings gear and close | Working | Open and close the preferences modal without backend state changes. |
+| Autoplay music setting | Working | Disabled with an installation tooltip when the private track is absent; persistence failures use the error banner. |
+| Error dismiss | Working | Dismisses the persistent, accessible error banner after the failure has been read. |
 
 Deferred items are deliberately limited to integration work that does not yet
-exist upstream: multiplayer tickets/stdin hand-off, a downloader progress
-observer, and the multi-OS release/signature matrix already assigned to WP26.
+exist upstream: multiplayer tickets/stdin hand-off, signed-channel byte-level
+progress, and the multi-OS release/signature matrix already assigned to WP26.
 
 Parity verification on Windows 11 passed `just check`, clean Wails
 `windows/amd64` and Dockerized WebKitGTK 4.1 Linux builds, and 20 repeated runs of the 20/20 unavailable-network
@@ -287,3 +311,9 @@ branch directly into a protected branch.
 - Secret scan of the diff: no token, secret, private key literal, PEM key, RFC
   8032 spike key, or signing material found. Test code derives its test-only key
   from a non-secret deterministic byte sequence at runtime.
+- PR 6 regression coverage verifies the OS-specific folder commands, nearest
+  existing dialog default, stale-default migration, exact legacy layout and
+  displayed version, offline legacy launch, developer-channel URL/redirect
+  pinning, zip-slip rejection, atomic promotion with retained rollback, and
+  signed-manifest precedence. The 20/20 unavailable-network test passed 20
+  repeated runs (400 simulated offline launches).

@@ -51,6 +51,11 @@ func (s *settingsStore) Load(gameRoot string) LauncherSettings {
 		settings.InstallDirectory = gameRoot
 	} else {
 		settings.InstallDirectory = filepath.Clean(settings.InstallDirectory)
+		// PR 6 briefly used an extra "game" segment. Migrate only that exact
+		// obsolete default so existing custom locations remain untouched.
+		if settings.InstallDirectory == filepath.Join(filepath.Clean(gameRoot), "game") {
+			settings.InstallDirectory = filepath.Clean(gameRoot)
+		}
 	}
 	settings.MusicVolume = normaliseVolume(settings.MusicVolume)
 	return settings

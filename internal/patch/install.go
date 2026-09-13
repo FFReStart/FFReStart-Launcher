@@ -34,7 +34,7 @@ func DefaultGameRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "FFReStart", "game"), nil
+	return filepath.Join(root, "FFReStart"), nil
 }
 
 func (i Installer) Install(ctx context.Context, manifestData []byte) error {

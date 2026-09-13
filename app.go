@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +25,7 @@ type App struct {
 	tokens        auth.TokenVault
 	refreshStore  auth.RefreshStore
 	installer     *patch.Installer
+	developer     *patch.DeveloperInstaller
 	manifestURL   string
 	client        *http.Client
 	settingsStore *settingsStore
@@ -59,6 +58,8 @@ type LauncherState struct {
 	MusicAvailable          bool       `json:"musicAvailable"`
 	MultiplayerConfigured   bool       `json:"multiplayerConfigured"`
 	SignedIn                bool       `json:"signedIn"`
+	UpdateChannel           string     `json:"updateChannel"`
+	DeveloperChannel        bool       `json:"developerChannel"`
 }
 
 func NewApp(launcher *launch.Service, tokens auth.TokenVault) *App {
@@ -66,6 +67,22 @@ func NewApp(launcher *launch.Service, tokens auth.TokenVault) *App {
 }
 func (a *App) ConfigureInstaller(installer *patch.Installer, manifestURL string, client *http.Client) {
 	a.installer, a.manifestURL, a.client = installer, manifestURL, client
+}
+func (a *App) configureDeveloperInstaller(installer *patch.DeveloperInstaller) {
+	a.developer = installer
+	if installer != nil {
+		installer.Progress = func(received, total int64) {
+			progress := -1
+			if total > 0 {
+				progress = int(received * 100 / total)
+			}
+			a.mu.Lock()
+			status := a.status
+			status.Progress = progress
+			a.status = status
+			a.mu.Unlock()
+		}
+	}
 }
 func (a *App) ConfigureExperience(store *settingsStore, settings LauncherSettings, defaultRoot string, refresh auth.RefreshStore, config authConfig) {
 	a.settingsStore, a.settings, a.defaultRoot, a.refreshStore, a.auth = store, settings, defaultRoot, refresh, config
@@ -104,12 +121,21 @@ func (a *App) GetGameStatus() GameStatus {
 	}
 	path, err := a.launcher.ResolvedGamePath()
 	if err != nil || !usableExecutable(path) {
+		if current.Title != "" {
+			return current
+		}
 		return GameStatus{Title: "INSTALL REQUIRED", Message: "Choose Install or Update to prepare your first deployment.", Version: "NEW INSTALL"}
 	}
 	version := "INSTALLED"
 	if a.installer != nil {
 		if value, err := a.installer.CurrentVersion(); err == nil && value != "" {
 			version = value
+		}
+	}
+	if value := legacyVersion(a.installDirectory()); version == "INSTALLED" && value != "" {
+		version = value
+		if !strings.HasPrefix(strings.ToLower(version), "v") {
+			version = "v" + version
 		}
 	}
 	message := current.Message
@@ -129,11 +155,22 @@ func (a *App) GetLauncherState() LauncherState {
 	settings, signedIn := a.settings, a.signedIn
 	a.mu.RUnlock()
 	_, musicErr := os.Stat(localMusicPath())
-	return LauncherState{Game: a.GetGameStatus(), InstallDirectory: settings.InstallDirectory, DefaultInstallDirectory: a.defaultRoot, SetupComplete: settings.SetupComplete, MusicVolume: settings.MusicVolume, MusicMuted: settings.MusicMuted, MusicAvailable: musicErr == nil, MultiplayerConfigured: a.auth.Issuer != "" && a.auth.ClientID != "", SignedIn: signedIn}
+	developerChannel := a.manifestURL == "" && a.developer != nil
+	channel := "SIGNED GAME MANIFEST"
+	if developerChannel {
+		channel = "UNSIGNED DEVELOPER BUILD"
+	}
+	return LauncherState{Game: a.GetGameStatus(), InstallDirectory: settings.InstallDirectory, DefaultInstallDirectory: a.defaultRoot, SetupComplete: settings.SetupComplete, MusicVolume: settings.MusicVolume, MusicMuted: settings.MusicMuted, MusicAvailable: musicErr == nil, MultiplayerConfigured: a.auth.Issuer != "" && a.auth.ClientID != "", SignedIn: signedIn, UpdateChannel: channel, DeveloperChannel: developerChannel}
+}
+
+func (a *App) installDirectory() string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.settings.InstallDirectory
 }
 
 func (a *App) InstallOrUpdate() error {
-	if a.installer == nil || a.manifestURL == "" {
+	if a.installer == nil || (a.manifestURL == "" && a.developer == nil) {
 		return errors.New("game update service is unavailable; installed builds can still play offline")
 	}
 	installed := a.GetGameStatus().Installed
@@ -141,8 +178,19 @@ func (a *App) InstallOrUpdate() error {
 	if installed {
 		title, message = "DOWNLOADING UPDATE", "Retrieving the latest signed mission files…"
 	}
+	if a.manifestURL == "" {
+		title, message = "INSTALLING UNSIGNED DEV BUILD", "Downloading the original developer build channel…"
+		if installed {
+			title = "UPDATING UNSIGNED DEV BUILD"
+		}
+	}
 	a.setStatus(GameStatus{Installed: installed, Busy: true, Title: title, Message: message, Version: "WORKING", Progress: -1})
-	err := a.installer.FetchAndInstall(a.ctx, a.client, a.manifestURL)
+	var err error
+	if a.manifestURL != "" {
+		err = a.installer.FetchAndInstall(a.ctx, a.client, a.manifestURL)
+	} else {
+		_, err = a.developer.InstallOrUpdate(a.ctx)
+	}
 	if errors.Is(err, patch.ErrNotNewer) {
 		err = nil
 	}
@@ -168,7 +216,7 @@ func (a *App) CompleteSetup() error {
 }
 
 func (a *App) ChooseInstallDirectory() (LauncherState, error) {
-	selected, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "Choose FFReStart install folder", DefaultDirectory: a.GetLauncherState().InstallDirectory})
+	selected, err := wailsruntime.OpenDirectoryDialog(a.ctx, wailsruntime.OpenDialogOptions{Title: "Choose FFReStart install folder", DefaultDirectory: nearestExistingDirectory(a.installDirectory())})
 	if err != nil || selected == "" {
 		return a.GetLauncherState(), err
 	}
@@ -196,6 +244,9 @@ func (a *App) applyInstallDirectory(value string) error {
 	if a.installer != nil {
 		a.installer.Root = root
 	}
+	if a.developer != nil {
+		a.developer.Root = root
+	}
 	a.mu.Unlock()
 	if a.settingsStore != nil {
 		if err := a.settingsStore.Save(settings); err != nil {
@@ -217,11 +268,9 @@ func (a *App) SaveMusicPreferences(volume float64, muted bool) error {
 	return a.settingsStore.Save(settings)
 }
 
-func (a *App) OpenCommunity() { wailsruntime.BrowserOpenURL(a.ctx, "https://discord.gg/fusionfall") }
-func (a *App) OpenSupport()   { wailsruntime.BrowserOpenURL(a.ctx, "https://discord.gg/fusionfall") }
-func (a *App) OpenGameFiles() {
-	wailsruntime.BrowserOpenURL(a.ctx, (&url.URL{Scheme: "file", Path: filepath.ToSlash(a.GetLauncherState().InstallDirectory)}).String())
-}
+func (a *App) OpenCommunity() error { return openExternalURL("https://discord.gg/Q5je3v9Bjg") }
+func (a *App) OpenSupport() error   { return openExternalURL("https://discord.gg/VNVjmPn2Fn") }
+func (a *App) OpenGameFiles() error { return openInstallFolder(a.installDirectory()) }
 
 func (a *App) SignInBrowser() error {
 	if a.auth.Issuer == "" || a.auth.ClientID == "" {

@@ -60,11 +60,14 @@ func main() {
 	installer := &patch.Installer{Root: settings.InstallDirectory, KeyID: gameKeyID, PublicKey: gameKey, Release: releaseMode == "true"}
 	gamePath := os.Getenv("FFRESTART_GAME_PATH")
 	launcher := launch.NewService(gamePath, launch.ExecStarter{}, checker)
-	launcher.SetInstalledGame(installer, installedGameExecutable())
+	launcher.SetInstalledGame(&gameInstallation{installer: installer}, installedGameExecutable())
 	launcher.SetUpdateTimeout(1500 * time.Millisecond)
 	refresh := &auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}}
 	app := NewApp(launcher, refresh)
 	app.ConfigureInstaller(installer, os.Getenv("FFRESTART_GAME_MANIFEST_URL"), nil)
+	if os.Getenv("FFRESTART_GAME_MANIFEST_URL") == "" {
+		app.configureDeveloperInstaller(&patch.DeveloperInstaller{Root: settings.InstallDirectory})
+	}
 	app.ConfigureExperience(store, settings, gameRoot, refresh, authConfig{Issuer: os.Getenv("FFRESTART_ZITADEL_ISSUER"), ClientID: os.Getenv("FFRESTART_ZITADEL_CLIENT_ID")})
 	frontendAssets, err := fs.Sub(assets, "frontend/dist")
 	if err != nil {
@@ -119,7 +122,7 @@ func installedGameExecutable() string {
 		return configured
 	}
 	if runtime.GOOS == "windows" {
-		return "FFReStart.exe"
+		return legacyWindowsGame
 	}
 	return "FFReStart.x86_64"
 }

@@ -66,3 +66,14 @@ func TestOfflineAppHasNoTokenPath(t *testing.T) {
 		t.Fatalf("offline launch touched token storage %d times", got)
 	}
 }
+
+func TestSignedManifestDisablesDeveloperChannel(t *testing.T) {
+	t.Parallel()
+	app := NewApp(nil, nil)
+	app.ConfigureInstaller(&patch.Installer{Root: t.TempDir()}, "https://updates.example/game.json", nil)
+	app.configureDeveloperInstaller(&patch.DeveloperInstaller{Root: t.TempDir()})
+	state := app.GetLauncherState()
+	if state.DeveloperChannel || state.UpdateChannel != "SIGNED GAME MANIFEST" {
+		t.Fatalf("signed manifest did not take precedence: %+v", state)
+	}
+}

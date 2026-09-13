@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -16,6 +18,22 @@ func TestLauncherSettingsPersistInstallAndMusic(t *testing.T) {
 	got := store.Load("unused")
 	if got != want {
 		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestLauncherSettingsMigratesObsoleteGameSubfolder(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(t.TempDir(), "settings.json")
+	store := &settingsStore{path: path}
+	data, err := json.Marshal(LauncherSettings{Version: 1, SetupComplete: true, InstallDirectory: filepath.Join(root, "game"), MusicVolume: defaultMusicVolume})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Load(root).InstallDirectory; got != root {
+		t.Fatalf("InstallDirectory = %q, want legacy root %q", got, root)
 	}
 }
 
