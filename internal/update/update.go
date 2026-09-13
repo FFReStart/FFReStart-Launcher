@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -20,12 +21,16 @@ type HTTPChecker struct {
 	keyID          string
 	publicKey      ed25519.PublicKey
 	manifestLimit  int64
+	allowHTTP      bool
 	healthCheck    func(context.Context, string) error
 }
 
 func NewHTTPChecker(manifestURL, currentVersion, keyID string, publicKey ed25519.PublicKey, manifestLimit int64) *HTTPChecker {
-	return &HTTPChecker{client: http.DefaultClient, manifestURL: manifestURL, currentVersion: currentVersion, keyID: keyID, publicKey: publicKey, manifestLimit: manifestLimit}
+	return &HTTPChecker{client: http.DefaultClient, manifestURL: manifestURL, currentVersion: currentVersion, keyID: keyID, publicKey: publicKey, manifestLimit: manifestLimit, allowHTTP: true}
 }
+
+// RequireHTTPS applies the release transport policy to the manifest and its artifact.
+func (c *HTTPChecker) RequireHTTPS() { c.allowHTTP = false }
 
 // SetKeyID makes the allowed release key explicit. It is primarily useful for
 // tests and future key rotation; a manifest cannot select an arbitrary key.
@@ -114,6 +119,10 @@ func copyFile(source, destination string) error {
 }
 
 func (c *HTTPChecker) fetchManifest(ctx context.Context) (Manifest, error) {
+	parsedURL, err := url.ParseRequestURI(c.manifestURL)
+	if err != nil || !allowedRemoteURL(parsedURL, c.allowHTTP) {
+		return Manifest{}, ErrInvalidManifest
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.manifestURL, nil)
 	if err != nil {
 		return Manifest{}, err
@@ -137,7 +146,7 @@ func (c *HTTPChecker) fetchManifest(ctx context.Context) (Manifest, error) {
 	if int64(len(data)) > limit {
 		return Manifest{}, errors.New("update manifest exceeds size limit")
 	}
-	manifest, err := ParseManifest(data)
+	manifest, err := ParseManifestWithPolicy(data, c.allowHTTP)
 	if err != nil {
 		return Manifest{}, err
 	}

@@ -147,6 +147,67 @@ length-delimited `LaunchHandoff` written to game stdin under
 `--auth-token-stdin`. Golden fixtures must decode in both Go and Unity C#.
 Tokens must remain absent from JavaScript, argv, logs and stdout.
 
+## Session 3: offline installation and protected signing
+
+Delivered in this session:
+
+- Release-mode launcher-manifest URLs, launcher artifact URLs, game-manifest
+  URLs and game-file URLs require HTTPS. Plain HTTP remains available only to
+  local development and tests. Windows-target game manifests reject
+  case-insensitive path collisions, reserved device names with any extension,
+  traversal and unsafe separators before any download begins.
+- `docs/manifest-signing.md` specifies the exact launcher newline serialization
+  and game-manifest canonical JSON field order. `cmd/signmanifest` signs or
+  verifies launcher and game manifests with an Ed25519 key supplied at runtime
+  through a named environment variable or explicit file path. It never prints
+  key material, and production signing refuses all repository test keys.
+- The manual-only `release` workflow builds the Wails Windows launcher with
+  both injected public keys, prepares unsigned manifests, and passes only the
+  signing job through the protected `release` environment. That job installs
+  no dependencies, fails clearly when either environment secret is absent,
+  signs with distinct launcher/game keys, verifies both results, and uploads
+  the launcher plus signed manifests. Workflow permissions are read-only and
+  every action is pinned by full commit SHA; no `pull_request` trigger exists.
+- Offline play now resolves the patch installer's atomically selected
+  `current.json` to the executable in its immutable version directory. The
+  `FFRESTART_GAME_PATH` and settings field remain a development override.
+  Without an installed version, the UI disables Play and offers **Install or
+  Update**, which fetches a bounded signed game manifest when the network is
+  available. An in-progress or failed install never joins or blocks the play
+  path for an already installed game.
+- The TypeScript UI exposes only installed/update status, Install or Update,
+  Play offline and the development path override. No credential or token value
+  crosses the JavaScript boundary.
+
+Verification for session 3:
+
+- `just check` passes frontend install/typecheck/build, Go vet/tests and all
+  configured golangci-lint analyzers.
+- Focused tests cover release HTTPS policy, Windows path collisions and device
+  names, signing and verification, missing signing secrets, test-key refusal,
+  installed-version selection and concurrent install/play isolation.
+- The unavailable-network test was re-run 20 times, exercising 400/400
+  successful simulated offline launches. Local Windows and Dockerized Linux
+  Wails builds passed; both builds are also covered by pull-request CI.
+- A diff scan found no private key, PEM block, credential or real signing
+  material. The only private keys are deterministic values constructed inside
+  `_test.go` files, and every associated public key remains in the release
+  denylist.
+
+Still open:
+
+- Delta patching, only if measured release sizes show that it is needed.
+- The owner's one-time offline signing ceremony: generate and seal separate
+  launcher/game keys, configure the protected environment secrets and public
+  key variables, enforce the required reviewer and release-ref rules, and run
+  the first approved workflow plus independent verification. Rotation requires
+  shipping the next public key before changing the protected secret, retaining
+  an overlap window, revoking the old key and completing the WP27 drill.
+- WP26's Windows 10/11, Ubuntu 22.04/24.04, Debian 12, SteamOS and macOS 14
+  compatibility/signature matrices and real offline packet-capture timings.
+- WP8 optional multiplayer login and stdin hand-off. It must preserve this
+  offline default and continue to keep tokens out of JavaScript, argv and logs.
+
 WP26 must exercise Windows 10 22H2 and Windows 11, Ubuntu 22.04/24.04, Debian
 12, SteamOS Gaming Mode, and macOS 14 on Apple silicon and Intel/Rosetta. It must
 cover offline launch with no network/account and multiplayer login/update/play.

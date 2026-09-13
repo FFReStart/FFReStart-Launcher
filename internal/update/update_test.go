@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -29,7 +30,7 @@ func testOnlyPrivateKey() ed25519.PrivateKey {
 }
 
 func signTestOnly(manifest *Manifest) {
-	manifest.Signature = base64.RawStdEncoding.EncodeToString(ed25519.Sign(testOnlyPrivateKey(), manifest.signedBytes()))
+	manifest.Signature = base64.RawStdEncoding.EncodeToString(ed25519.Sign(testOnlyPrivateKey(), manifest.SigningBytes()))
 }
 
 func updateServer(t *testing.T, binary []byte, mutate func(*Manifest)) (*httptest.Server, string) {
@@ -184,5 +185,46 @@ func TestReleaseBuildRejectsSpikeRFC8032KeyUnderProductionID(t *testing.T) {
 	const spikePublicKey = "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
 	if _, err := ReleasePublicKey("release-2026-01", spikePublicKey, true); !errors.Is(err, ErrTestReleaseKey) {
 		t.Fatalf("error = %v, want spike test key rejection", err)
+	}
+}
+
+func TestReleaseBuildRejectsGameManifestTestKey(t *testing.T) {
+	seed := make([]byte, ed25519.SeedSize)
+	for index := range seed {
+		seed[index] = byte(255 - index)
+	}
+	publicKey := ed25519.NewKeyFromSeed(seed).Public().(ed25519.PublicKey)
+	if _, err := ReleasePublicKey("game-release", hex.EncodeToString(publicKey), true); !errors.Is(err, ErrTestReleaseKey) {
+		t.Fatalf("public key %x: error = %v, want known game test key rejection", publicKey, err)
+	}
+}
+
+func TestReleaseManifestRequiresHTTPS(t *testing.T) {
+	sum := sha256.Sum256([]byte("launcher"))
+	manifest := Manifest{Version: "v2.0.0", URL: "http://updates.example/launcher", Size: 8, SHA256: hex.EncodeToString(sum[:]), KeyID: testOnlyKeyID}
+	signTestOnly(&manifest)
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseManifestWithPolicy(data, false); !errors.Is(err, ErrInvalidManifest) {
+		t.Fatalf("error = %v, want insecure URL rejection", err)
+	}
+	if _, err := ParseManifestWithPolicy(data, true); err != nil {
+		t.Fatalf("local development HTTP rejected: %v", err)
+	}
+}
+
+func TestReleaseCheckerRejectsHTTPManifestURL(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	defer server.Close()
+	checker := NewHTTPChecker(server.URL, "v1.0.0", testOnlyKeyID, testOnlyPrivateKey().Public().(ed25519.PublicKey), 1<<20)
+	checker.RequireHTTPS()
+	if err := checker.Check(context.Background()); !errors.Is(err, ErrInvalidManifest) {
+		t.Fatalf("error = %v, want insecure manifest URL rejection", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("HTTP manifest service received %d requests", got)
 	}
 }
