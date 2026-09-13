@@ -28,6 +28,10 @@ type Starter interface {
 	Start(context.Context, string, ...string) (Process, error)
 }
 
+type StdinStarter interface {
+	StartWithStdin(context.Context, string, []byte, ...string) (Process, error)
+}
+
 type Process interface {
 	Wait() error
 }
@@ -47,6 +51,33 @@ func (ExecStarter) Start(_ context.Context, path string, args ...string) (Proces
 	configureDetachedProcess(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, err
+	}
+	return cmd, nil
+}
+
+func (ExecStarter) StartWithStdin(_ context.Context, path string, payload []byte, args ...string) (Process, error) {
+	// #nosec G204 -- path is the executable explicitly configured by the local user.
+	cmd := exec.Command(path, args...)
+	cmd.Dir = filepath.Dir(path)
+	configureDetachedProcess(cmd)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		return nil, err
+	}
+	if _, err := stdin.Write(payload); err != nil {
+		_ = stdin.Close()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("write launch hand-off: %w", err)
+	}
+	if err := stdin.Close(); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return nil, fmt.Errorf("close launch hand-off: %w", err)
 	}
 	return cmd, nil
 }
@@ -201,17 +232,8 @@ func (s *Service) PlayOffline(ctx context.Context) error {
 	if process == nil {
 		return errors.New("start game: no process handle")
 	}
-	waited := make(chan error, 1)
-	go func() { waited <- process.Wait() }()
-	timer := time.NewTimer(s.launchGrace)
-	defer timer.Stop()
-	select {
-	case waitErr := <-waited:
-		if waitErr != nil {
-			return fmt.Errorf("%w: %v", ErrGameExitedEarly, waitErr)
-		}
-		return ErrGameExitedEarly
-	case <-timer.C:
+	if err := s.supervise(process); err != nil {
+		return err
 	}
 	s.updateOnce.Do(func() {
 		if s.checker == nil {
@@ -224,4 +246,46 @@ func (s *Service) PlayOffline(ctx context.Context) error {
 		}()
 	})
 	return nil
+}
+
+// PlayMultiplayer writes exactly one length-delimited LaunchHandoff to stdin.
+// The ticket never appears in argv, the environment, logs, or JavaScript.
+func (s *Service) PlayMultiplayer(ctx context.Context, ticket []byte, bootstrap LaunchBootstrap) error {
+	path, err := s.ResolvedGamePath()
+	if err != nil {
+		return err
+	}
+	payload, err := marshalDelimitedHandoff(ticket, bootstrap)
+	if err != nil {
+		return err
+	}
+	defer clear(payload)
+	starter, ok := s.starter.(StdinStarter)
+	if !ok {
+		return errors.New("multiplayer stdin hand-off is unavailable")
+	}
+	process, err := starter.StartWithStdin(ctx, path, payload, "--auth-token-stdin")
+	if err != nil {
+		return fmt.Errorf("start multiplayer game: %w", err)
+	}
+	if process == nil {
+		return errors.New("start multiplayer game: no process handle")
+	}
+	return s.supervise(process)
+}
+
+func (s *Service) supervise(process Process) error {
+	waited := make(chan error, 1)
+	go func() { waited <- process.Wait() }()
+	timer := time.NewTimer(s.launchGrace)
+	defer timer.Stop()
+	select {
+	case waitErr := <-waited:
+		if waitErr != nil {
+			return fmt.Errorf("%w: %v", ErrGameExitedEarly, waitErr)
+		}
+		return ErrGameExitedEarly
+	case <-timer.C:
+		return nil
+	}
 }

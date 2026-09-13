@@ -13,6 +13,10 @@ import (
 var ErrReauthenticationRequired = errors.New("fresh sign-in required")
 
 func Refresh(ctx context.Context, tokenURL, clientID string, store RefreshStore) (Tokens, error) {
+	return RefreshWithClient(ctx, tokenURL, clientID, store, nil)
+}
+
+func RefreshWithClient(ctx context.Context, tokenURL, clientID string, store RefreshStore, client *http.Client) (Tokens, error) {
 	refreshToken, err := store.Load()
 	if err != nil {
 		return Tokens{}, err
@@ -20,7 +24,10 @@ func Refresh(ctx context.Context, tokenURL, clientID string, store RefreshStore)
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {refreshToken}, "client_id": {clientID}}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := http.DefaultClient.Do(request)
+	if client == nil {
+		client = http.DefaultClient
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return Tokens{}, err
 	}
@@ -41,8 +48,14 @@ func Refresh(ctx context.Context, tokenURL, clientID string, store RefreshStore)
 	if response.StatusCode != http.StatusOK {
 		return Tokens{}, fmt.Errorf("refresh failed: %s", body.Error)
 	}
-	if body.RefreshToken != "" {
-		_ = store.Save(body.RefreshToken)
+	if body.AccessToken == "" {
+		return Tokens{}, errors.New("refresh response omitted access token")
+	}
+	if body.RefreshToken == "" {
+		body.RefreshToken = refreshToken
+	}
+	if err := store.Save(body.RefreshToken); err != nil {
+		return Tokens{}, err
 	}
 	return Tokens{body.AccessToken, body.RefreshToken, body.IDToken}, nil
 }

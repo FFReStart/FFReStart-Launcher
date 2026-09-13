@@ -47,7 +47,7 @@ func legacyExecutablePath(root string) string {
 }
 
 func legacyVersion(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, legacyVersionFile)) // #nosec G304 -- root is the user-selected install directory.
+	data, err := os.ReadFile(filepath.Join(root, legacyVersionFile)) // #nosec G304,G703 -- root is the user-selected install directory.
 	if err != nil {
 		return ""
 	}

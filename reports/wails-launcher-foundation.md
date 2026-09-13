@@ -261,8 +261,8 @@ loaded from the user's local app-data directory.
 | Embedded private theme asset | Changed | Deliberately excluded. `scripts/install-local-music.ps1` uses read-only `git show` to install it at `%LOCALAPPDATA%\FFReStart\launcher\audio`. |
 | Username/password form and remembered local password session | Changed | Replaced per D08/D13 with external-browser S256 PKCE or RFC 8628 device sign-in. The launcher never handles passwords. |
 | Keyring-backed remembered session | Ported | Refresh tokens use the OS keyring with process-memory fallback; access and ID tokens remain memory-only in Go. |
-| Multiplayer launch after sign-in | Deferred | UI clearly says unavailable until WP7 tickets and WP8 game hand-off exist. Sign-in is optional and never gates offline play. |
-| Authentication token passed in argv | Changed | No token is passed today. The approved future path is one length-delimited hand-off over stdin with only `--auth-token-stdin` in argv. |
+| Multiplayer launch after sign-in | Ported | A configured launcher signs in through browser PKCE or device code, resolves the pilot with `/v1/me`, lists eligible realms, mints a short-lived launch ticket, and hands it to the game without affecting offline play. |
+| Authentication token passed in argv | Changed | The ticket and server-owned bootstrap are encoded as one length-delimited `LaunchHandoff` protobuf on stdin. Only `--auth-token-stdin` is visible in argv. |
 | Preview-only WPF mode | Deferred | The production Wails layout is directly previewable through the frontend dev server; a separate runtime preview flag adds no user-facing capability. |
 | WPF zip updater and version text file | Changed | Restored as an explicitly labelled unsigned developer compatibility channel using the two exact pinned GitHub release URLs. Redirects are restricted to GitHub release-asset hosts; archive and entry sizes are bounded; zip traversal and symlinks are rejected; staging is atomically promoted with a retained `.previous` rollback. `Version.txt` uses the original three-part numeric comparison and is displayed as `vX.Y.Z`. A configured signed manifest disables this channel. |
 
@@ -271,20 +271,21 @@ loaded from the user's local app-data directory.
 | Control | Result | Failure or disabled-state communication |
 |---|---|---|
 | Music mute and volume | Working | Located only in Settings and disabled only when the local private track is absent. Music autoplays unless muted; volume/mute persist, and failures use the visible error banner. |
-| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when ZITADEL is unconfigured or the pilot is already signed in. Multiplayer remains labelled unavailable pending WP7/WP8. |
+| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when the server is unconfigured or the pilot is already signed in; failures use the error banner. |
 | Sign out | Working | Visible only for a signed-in pilot; keyring failures use the error banner. |
 | Play / Install or Update | Working | Plays the detected legacy or signed install offline. With no install it invokes the configured channel. Busy state disables it with a wait tooltip; all failures remain visible. |
+| Play Multiplayer and realm selection | Working when configured and signed in | Hidden until configured and signed in, disabled with a clear reason until an eligible realm and game build exist, and all admission/launch failures use the error banner. |
 | Check for Updates | Working | Uses the signed channel when configured, otherwise the clearly labelled unsigned developer channel. Busy state explains why it is disabled. |
 | Discord and Support | Working | Use the original exact mapping; OS-open failures use the error banner. |
 | Game Files | Working | Creates and opens the install root, not the build subfolder; OS-open and filesystem failures use the error banner. |
 | Default, Change, and setup/settings folder controls | Working | Change uses the nearest existing chooser directory. All location controls are disabled during installation with an explanatory tooltip. |
 | First-run Continue | Working | Persists completion; it is disabled during installation and save failures use the error banner. |
 | Settings gear and close | Working | Open and close the preferences modal without backend state changes. |
+| Import developer server config | Working | Uses a native file picker; invalid schemas, unsafe HTTP endpoints, and save failures use the error banner. |
 | Error dismiss | Working | Dismisses the persistent, accessible error banner after the failure has been read. |
 
-Deferred items are deliberately limited to integration work that does not yet
-exist upstream: multiplayer tickets/stdin hand-off, signed-channel byte-level
-progress, and the multi-OS release/signature matrix already assigned to WP26.
+Deferred items are deliberately limited to signed-channel byte-level progress
+and the multi-OS release/signature matrix already assigned to WP26.
 
 Parity verification on Windows 11 passed `just check`, clean Wails
 `windows/amd64` and Dockerized WebKitGTK 4.1 Linux builds, and 20 repeated runs of the 20/20 unavailable-network
@@ -292,6 +293,66 @@ offline-launch test (400 simulated launches). A native packaged-app smoke test
 rendered the 1100×680 experience with all three public image assets, and its
 accessibility state reported audio playing from the private local track. The
 owner's executable is `build/bin/ffrestart-launcher.exe`.
+
+## WP8 multiplayer sign-in and launch hand-off
+
+Multiplayer is optional and appears only after a server configuration is
+available. Settings shows the active issuer and control API. **Import developer
+server config** uses a native file picker, accepts the control stack's
+`dev-launcher-config.json`, rejects unknown or malformed fields, and permits
+plain HTTP only for localhost or loopback addresses. The validated public
+configuration is persisted with launcher settings. Production releases inject
+the issuer, API, browser and device client IDs, audience, protocol, and build
+hash at build time and require HTTPS.
+
+Browser sign-in uses S256 PKCE and a loopback callback; device sign-in uses its
+separate public client. Access and ID tokens remain in Go process memory and a
+remembered refresh token is stored only by the OS keyring. The account chip
+comes from `GET /v1/me` and contains only the handle and account ID. Startup
+can refresh a remembered session silently, `invalid_grant` clears it, `/v1/me`
+and ticket 401s get one refresh retry, and sign-out clears memory, keyring, and
+the persisted non-secret session metadata.
+
+After sign-in, the launcher lists eligible realms from public `/v1/bootstrap`. Play
+Multiplayer sends the selected realm plus the injected protocol/build metadata
+to `/v1/launch-tickets`. The response is strictly bounded and validated. Its
+short-lived ticket and server-owned bootstrap are serialized as one
+length-delimited `launch.v1.LaunchHandoff` message to the child's stdin; argv
+contains only `--auth-token-stdin`. Successful process supervision closes the
+launcher, while ticket, network, protocol, sanction, realm, and early-process
+failures stay in the existing error banner. Offline Play remains the primary,
+non-blocking path and never requires server configuration or authentication.
+
+WP8 verification:
+
+- `just check` passed frontend typecheck/build, Go vet/tests, and all configured
+  golangci-lint analyzers. `just build-windows` produced the Wails v2.15.0
+  executable, and 20 repeated unavailable-network tests completed 400/400
+  simulated offline launches.
+- Unit and boundary tests cover configuration policy and persistence, auth
+  refresh/sign-out behavior, control API contracts and redacted errors, exact
+  protobuf framing, stdin-only credential transport, and a forced ticket 401
+  followed by refresh and successful retry.
+- A real Docker E2E used ZITADEL PKCE, `/v1/me`, the WP7 launch-ticket endpoint,
+  and a dummy game process that decoded the protobuf and verified the JWT
+  subject. `TestWP8DockerEndToEnd` passed in 1.09 seconds. The documented local
+  host alias was simulated by the test resolver because it was not installed
+  on this machine; all authentication and API traffic was real.
+- The temporary combined HTTP worktree initially required a local-only reorder
+  of WP7's `LaunchBootstrapDto` before `LaunchTicketResponseDto` to avoid a
+  production JavaScript initialization error. It was reported, fixed in HTTP
+  PR 29, and merged to HTTP development at `365bfa1`; no HTTP patch was
+  committed to this public launcher repository.
+- No access token, ID token, refresh token, launch ticket, private key, or real
+  client secret is written to settings, returned to JavaScript, included in
+  argv or error text, or logged. The refresh token's only durable location is
+  the OS keyring.
+
+The Unity client integration point is the existing multiplayer startup path:
+when `--auth-token-stdin` is present, read exactly one length-delimited
+`launch.v1.LaunchHandoff` from standard input, enforce size and expiry bounds,
+validate the ticket and pinned server/bootstrap identity, clear the input
+buffer, then continue admission. It must never echo or persist the ticket.
 
 ## .NET cutover option
 

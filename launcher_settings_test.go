@@ -11,7 +11,7 @@ import (
 func TestLauncherSettingsPersistInstallAndMusic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings.json")
 	store := &settingsStore{path: path}
-	want := LauncherSettings{Version: 1, SetupComplete: true, InstallDirectory: filepath.Join(t.TempDir(), "game"), MusicVolume: 0.62, MusicMuted: true}
+	want := LauncherSettings{Version: 2, SetupComplete: true, InstallDirectory: filepath.Join(t.TempDir(), "game"), MusicVolume: 0.62, MusicMuted: true}
 	if err := store.Save(want); err != nil {
 		t.Fatal(err)
 	}

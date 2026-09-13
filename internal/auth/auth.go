@@ -19,9 +19,15 @@ import (
 )
 
 type Tokens struct{ AccessToken, RefreshToken, IDToken string }
-type BrowserConfig struct{ Issuer, ClientID, AuthURL, TokenURL string }
+type BrowserConfig struct {
+	Issuer, ClientID, AuthURL, TokenURL string
+	Scopes                              []string
+	Client                              *http.Client
+}
 type DeviceConfig struct {
 	ClientID, DeviceURL, TokenURL string
+	Scopes                        []string
+	Client                        *http.Client
 	PollInterval                  time.Duration
 }
 type DevicePrompt struct{ VerificationURI, VerificationURIComplete, UserCode string }
@@ -36,6 +42,9 @@ func randomURLSafe(size int) (string, error) {
 
 // BrowserLogin uses an external browser, loopback redirect, S256 PKCE, state and nonce.
 func BrowserLogin(ctx context.Context, config BrowserConfig, open func(string) error) (Tokens, error) {
+	if config.Client != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, config.Client)
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return Tokens{}, err
@@ -51,7 +60,11 @@ func BrowserLogin(ctx context.Context, config BrowserConfig, open func(string) e
 	}
 	verifier := oauth2.GenerateVerifier()
 	redirect := "http://" + listener.Addr().String() + "/callback"
-	oauth := oauth2.Config{ClientID: config.ClientID, RedirectURL: redirect, Endpoint: oauth2.Endpoint{AuthURL: config.AuthURL, TokenURL: config.TokenURL}, Scopes: []string{oidc.ScopeOpenID, "offline_access"}}
+	scopes := config.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{oidc.ScopeOpenID, "offline_access"}
+	}
+	oauth := oauth2.Config{ClientID: config.ClientID, RedirectURL: redirect, Endpoint: oauth2.Endpoint{AuthURL: config.AuthURL, TokenURL: config.TokenURL}, Scopes: scopes}
 	type callback struct{ code, state string }
 	result := make(chan callback, 1)
 	mux := http.NewServeMux()
@@ -81,7 +94,7 @@ func BrowserLogin(ctx context.Context, config BrowserConfig, open func(string) e
 	}
 	token, err := oauth.Exchange(ctx, received.code, oauth2.VerifierOption(verifier))
 	if err != nil {
-		return Tokens{}, fmt.Errorf("exchange authorization code: %w", err)
+		return Tokens{}, errors.New("authorization code exchange failed")
 	}
 	rawID, ok := token.Extra("id_token").(string)
 	if !ok || rawID == "" {
@@ -105,10 +118,18 @@ func BrowserLogin(ctx context.Context, config BrowserConfig, open func(string) e
 }
 
 func DeviceLogin(ctx context.Context, config DeviceConfig, show func(DevicePrompt) error) (Tokens, error) {
-	form := url.Values{"client_id": {config.ClientID}, "scope": {"openid offline_access"}}
+	scopes := config.Scopes
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "offline_access"}
+	}
+	client := config.Client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	form := url.Values{"client_id": {config.ClientID}, "scope": {strings.Join(scopes, " ")}}
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, config.DeviceURL, strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response, err := http.DefaultClient.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return Tokens{}, err
 	}
@@ -142,7 +163,7 @@ func DeviceLogin(ctx context.Context, config DeviceConfig, show func(DevicePromp
 		form = url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:device_code"}, "device_code": {grant.DeviceCode}, "client_id": {config.ClientID}}
 		request, _ = http.NewRequestWithContext(ctx, http.MethodPost, config.TokenURL, strings.NewReader(form.Encode()))
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		response, err = http.DefaultClient.Do(request)
+		response, err = client.Do(request)
 		if err != nil {
 			return Tokens{}, err
 		}
@@ -157,7 +178,7 @@ func DeviceLogin(ctx context.Context, config DeviceConfig, show func(DevicePromp
 		if err != nil {
 			return Tokens{}, err
 		}
-		if response.StatusCode == http.StatusOK {
+		if response.StatusCode == http.StatusOK && body.AccessToken != "" {
 			return Tokens{body.AccessToken, body.RefreshToken, body.IDToken}, nil
 		}
 		switch body.Error {

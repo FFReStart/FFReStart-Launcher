@@ -146,3 +146,21 @@ func TestInvalidGrantClearsRefreshToken(t *testing.T) {
 		t.Fatal("refresh token was not cleared")
 	}
 }
+
+func TestRefreshKeepsTokenWhenRotationResponseOmitsSuccessor(t *testing.T) {
+	t.Parallel()
+	store := &MemoryStore{}
+	_ = store.Save("current-refresh")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(writer).Encode(map[string]string{"access_token": "new-access"})
+	}))
+	defer server.Close()
+	tokens, err := Refresh(context.Background(), server.URL, "launcher", store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Load()
+	if err != nil || tokens.RefreshToken != "current-refresh" || stored != "current-refresh" {
+		t.Fatalf("refresh token was lost: tokens=%+v stored=%q err=%v", tokens, stored, err)
+	}
+}

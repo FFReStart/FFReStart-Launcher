@@ -68,6 +68,6 @@ func (f *FallbackStore) Load() (string, error) {
 	}
 	return f.Memory.Load()
 }
-func (f *FallbackStore) Clear() error                                      { _ = f.Primary.Clear(); return f.Memory.Clear() }
+func (f *FallbackStore) Clear() error                                      { return errors.Join(f.Primary.Clear(), f.Memory.Clear()) }
 func (f *FallbackStore) LoadRefresh(context.Context) (string, error)       { return f.Load() }
 func (f *FallbackStore) SaveRefresh(_ context.Context, value string) error { return f.Save(value) }

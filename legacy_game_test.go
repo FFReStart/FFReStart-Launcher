@@ -63,7 +63,7 @@ func TestLegacyGameStatusAndOfflineLaunch(t *testing.T) {
 	service.SetInstalledGame(&gameInstallation{installer: installer}, legacyWindowsGame)
 	app := NewApp(service, nil)
 	app.ConfigureInstaller(installer, "", nil)
-	app.ConfigureExperience(nil, LauncherSettings{InstallDirectory: root}, root, nil, authConfig{})
+	app.ConfigureExperience(nil, LauncherSettings{InstallDirectory: root}, root, nil)
 	status := app.GetGameStatus()
 	if !status.Installed || status.Version != "v0.0.21" {
 		t.Fatalf("status = %+v", status)
