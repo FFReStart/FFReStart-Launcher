@@ -1,0 +1,9 @@
+.git
+.github
+GameLauncher
+frontend/node_modules
+frontend/dist
+build/bin
+build/linux-out
+reports
+*.sln

@@ -1,4 +1,39 @@
-# FFReStart-Launcher
+# FF:ReStart Launcher
+
+The production launcher foundation uses Wails v2.15.0 with a Go security
+boundary and a TypeScript UI. The existing .NET launcher remains in
+`GameLauncher/` until a separate cutover decision.
+
+## Development
+
+The pinned toolchain is Go 1.27.1, Node 22.12.0, pnpm 9.15.1, Wails v2.15.0,
+and golangci-lint v2.13.2. Run the full local gate with:
+
+```shell
+just check
+```
+
+Build Windows locally with `just build-windows`. The Linux build is isolated in
+Docker and uses WebKitGTK 4.1 through the required `webkit2_41` build tag:
+
+```shell
+just build-linux
+```
+
+Set `FFRESTART_GAME_PATH` to the game executable and optionally set
+`FFRESTART_UPDATE_MANIFEST_URL` for the single best-effort background update
+check. Offline play never requires either the network or an account.
+
+Release builds inject only the Ed25519 public verification key; signing keys
+belong exclusively to the protected release environment:
+
+```shell
+FFRESTART_UPDATE_KEY_ID=release-2026-01 \
+FFRESTART_UPDATE_PUBLIC_KEY_HEX=<public-key> \
+just build-release windows/amd64
+```
+
+The release command rejects absent keys and key IDs beginning with `test`.
 The Launcher Repository for FFReStart.
 
 Built with .NET 8. Tagged releases are self-contained, so users do not need to install the .NET runtime separately.

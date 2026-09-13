@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package launch.v1;
+
+option go_package = "github.com/FFReStart/FFReStart-Launcher/contracts/proto/launch/v1;launchv1";
+
+// LaunchHandoff is reserved for WP8 multiplayer. Offline launch does not
+// create this message or open the child's stdin.
+message LaunchHandoff {
+  string ticket = 1;
+  LaunchBootstrap bootstrap = 2;
+}
+
+message LaunchBootstrap {
+  string realm_id = 1;
+  string world_endpoint = 2;
+  string gns_ca_key_id = 3;
+  uint32 protocol_min = 4;
+  uint32 protocol_max = 5;
+  string content_version = 6;
+}
