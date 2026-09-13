@@ -20,6 +20,7 @@ var (
 	ErrInvalidSignature = errors.New("update manifest signature rejected")
 	ErrNotNewer         = errors.New("update version is not newer")
 	ErrTestReleaseKey   = errors.New("release build refuses a known test update key")
+	ErrInvalidSize      = errors.New("update size is invalid")
 )
 
 // knownTestPublicKeys contains public material only. Keep every key used by
@@ -34,6 +35,7 @@ var knownTestPublicKeys = [...][ed25519.PublicKeySize]byte{
 type Manifest struct {
 	Version   string `json:"version"`
 	URL       string `json:"url"`
+	Size      int64  `json:"size"`
 	SHA256    string `json:"sha256"`
 	KeyID     string `json:"key_id"`
 	Signature string `json:"signature"`
@@ -50,8 +52,11 @@ func ParseManifest(data []byte) (Manifest, error) {
 		return Manifest{}, err
 	}
 	parsedURL, err := url.ParseRequestURI(manifest.URL)
-	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" || !semver.IsValid(manifest.Version) || len(manifest.KeyID) == 0 || len(manifest.KeyID) > 128 {
+	if err != nil || (parsedURL.Scheme != "https" && parsedURL.Scheme != "http") || parsedURL.Host == "" || !semver.IsValid(manifest.Version) || len(manifest.KeyID) == 0 || len(manifest.KeyID) > 128 {
 		return Manifest{}, ErrInvalidManifest
+	}
+	if manifest.Size <= 0 || manifest.Size > maxArtifactSize {
+		return Manifest{}, ErrInvalidSize
 	}
 	hash, err := hex.DecodeString(manifest.SHA256)
 	if err != nil || len(hash) != 32 {
@@ -72,7 +77,7 @@ func ensureEOF(decoder *json.Decoder) error {
 }
 
 func (m Manifest) signedBytes() []byte {
-	return []byte(m.Version + "\n" + m.URL + "\n" + strings.ToLower(m.SHA256) + "\n" + m.KeyID + "\n")
+	return []byte(m.Version + "\n" + m.URL + "\n" + fmt.Sprintf("%d", m.Size) + "\n" + strings.ToLower(m.SHA256) + "\n" + m.KeyID + "\n")
 }
 
 func VerifyManifest(manifest Manifest, currentVersion, expectedKeyID string, publicKey ed25519.PublicKey) error {
