@@ -257,8 +257,8 @@ Deferred items are deliberately limited to integration work that does not yet
 exist upstream: multiplayer tickets/stdin hand-off, a downloader progress
 observer, and the multi-OS release/signature matrix already assigned to WP26.
 
-Parity verification on Windows 11 passed `just check`, a clean Wails
-`windows/amd64` build, and 20 repeated runs of the 20/20 unavailable-network
+Parity verification on Windows 11 passed `just check`, clean Wails
+`windows/amd64` and Dockerized WebKitGTK 4.1 Linux builds, and 20 repeated runs of the 20/20 unavailable-network
 offline-launch test (400 simulated launches). A native packaged-app smoke test
 rendered the 1100×680 experience with all three public image assets, and its
 accessibility state reported audio playing from the private local track. The
