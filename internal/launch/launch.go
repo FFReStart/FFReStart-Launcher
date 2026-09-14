@@ -59,7 +59,7 @@ func (ExecStarter) StartWithStdin(_ context.Context, path string, payload []byte
 	// #nosec G204 -- path is the executable explicitly configured by the local user.
 	cmd := exec.Command(path, args...)
 	cmd.Dir = filepath.Dir(path)
-	configureDetachedProcess(cmd)
+	configureDetachedStdinProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
