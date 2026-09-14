@@ -246,7 +246,7 @@ loaded from the user's local app-data directory.
 | High-contrast cyan-bordered tooltips | Ported | Tooltips use the original dark raised background and readable foreground. |
 | Entrance, hover, progress and status animations | Ported | Reduced-motion preferences are respected. |
 | System window chrome | Ported | The WPF reference used normal system chrome, so Wails keeps native chrome rather than inventing a frameless title bar. |
-| Brand header and guest/signed-in pilot chip | Ported | Account state contains display state only; no credential reaches TypeScript. |
+| Brand header and guest/signed-in account badge | Ported | Account state contains display state only; no credential reaches TypeScript. |
 | Hero welcome label and fight-for-the-future headline | Ported | Placement and condensed uppercase treatment match the reference. |
 | First-run setup | Ported | A modal explains offline/account behavior and confirms or changes the install root before continuing. |
 | Install-location selection, default reset and persistence | Ported | The default is the original `%LOCALAPPDATA%\FFReStart` root. Settings migrate PR 6's exact obsolete `FFReStart\game` default back to that root without changing custom locations. The native chooser starts at the selected directory or its nearest existing parent, so a missing folder cannot break Change. |
@@ -261,7 +261,7 @@ loaded from the user's local app-data directory.
 | Embedded private theme asset | Changed | Deliberately excluded. `scripts/install-local-music.ps1` uses read-only `git show` to install it at `%LOCALAPPDATA%\FFReStart\launcher\audio`. |
 | Username/password form and remembered local password session | Changed | Replaced per D08/D13 with external-browser S256 PKCE or RFC 8628 device sign-in. The launcher never handles passwords. |
 | Keyring-backed remembered session | Ported | Refresh tokens use the OS keyring with process-memory fallback; access and ID tokens remain memory-only in Go. |
-| Multiplayer launch after sign-in | Ported | A configured launcher signs in through browser PKCE or device code, resolves the pilot with `/v1/me`, lists eligible realms, mints a short-lived launch ticket, and hands it to the game without affecting offline play. |
+| Multiplayer launch after sign-in | Ported | A configured launcher signs in through browser PKCE or device code, resolves the account with `/v1/me`, lists eligible realms, mints a short-lived launch ticket, and hands it to the game without affecting offline play. |
 | Authentication token passed in argv | Changed | The ticket and server-owned bootstrap are encoded as one length-delimited `LaunchHandoff` protobuf on stdin. Only `--auth-token-stdin` is visible in argv. |
 | Preview-only WPF mode | Deferred | The production Wails layout is directly previewable through the frontend dev server; a separate runtime preview flag adds no user-facing capability. |
 | WPF zip updater and version text file | Changed | Restored as an explicitly labelled unsigned developer compatibility channel using the two exact pinned GitHub release URLs. Redirects are restricted to GitHub release-asset hosts; archive and entry sizes are bounded; zip traversal and symlinks are rejected; staging is atomically promoted with a retained `.previous` rollback. `Version.txt` uses the original three-part numeric comparison and is displayed as `vX.Y.Z`. A configured signed manifest disables this channel. |
@@ -271,8 +271,8 @@ loaded from the user's local app-data directory.
 | Control | Result | Failure or disabled-state communication |
 |---|---|---|
 | Music mute and volume | Working | Located only in Settings and disabled only when the local private track is absent. Music autoplays unless muted; volume/mute persist, and failures use the visible error banner. |
-| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when the server is unconfigured or the pilot is already signed in; failures use the error banner. |
-| Sign out | Working | Visible only for a signed-in pilot; keyring failures use the error banner. |
+| Browser sign-in and device-code sign-in | Working when configured | Disabled with a tooltip when the server is unconfigured or the player is already signed in; failures use the error banner. |
+| Sign out | Working | Visible only for a signed-in player; keyring failures use the error banner. |
 | Play / Install or Update | Working | Plays the detected legacy or signed install offline. With no install it invokes the configured channel. Busy state disables it with a wait tooltip; all failures remain visible. |
 | Play Multiplayer and realm selection | Working when configured and signed in | Hidden until configured and signed in, disabled with a clear reason until an eligible realm and game build exist, and all admission/launch failures use the error banner. |
 | Check for Updates | Working | Uses the signed channel when configured, otherwise the clearly labelled unsigned developer channel. Busy state explains why it is disabled. |
