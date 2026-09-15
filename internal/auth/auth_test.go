@@ -147,6 +147,34 @@ func TestInvalidGrantClearsRefreshToken(t *testing.T) {
 	}
 }
 
+// ZITADEL refuses a refresh token that rotation already replaced with
+// invalid_request, not invalid_grant; retrying it can never succeed.
+func TestRefusedRefreshTokenNeedsANewSignIn(t *testing.T) {
+	for _, refusal := range []struct {
+		status int
+		body   string
+	}{
+		{http.StatusBadRequest, `{"error":"invalid_request","error_description":"Errors.OIDCSession.RefreshTokenInvalid"}`},
+		{http.StatusUnauthorized, `{"error":"invalid_client"}`},
+		{http.StatusBadRequest, `not json`},
+	} {
+		store := &MemoryStore{}
+		_ = store.Save("rotated-out-token")
+		server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(refusal.status)
+			_, _ = writer.Write([]byte(refusal.body))
+		}))
+		_, err := RefreshWithClient(context.Background(), server.URL, "ffr-launcher", store, server.Client())
+		server.Close()
+		if !errors.Is(err, ErrReauthenticationRequired) {
+			t.Fatalf("%d %s: got %v", refusal.status, refusal.body, err)
+		}
+		if _, err := store.Load(); err == nil {
+			t.Fatalf("%d %s: the refused refresh token was kept", refusal.status, refusal.body)
+		}
+	}
+}
+
 func TestRefreshKeepsTokenWhenRotationResponseOmitsSuccessor(t *testing.T) {
 	t.Parallel()
 	store := &MemoryStore{}
