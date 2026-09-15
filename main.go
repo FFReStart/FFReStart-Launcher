@@ -97,13 +97,21 @@ func main() {
 			}
 		}
 	}
+	hooks, err := loadE2EHooks(releaseMode == "true", os.Getenv, os.Stdout)
+	if err != nil {
+		log.Fatal(err)
+	}
 	installer := &patch.Installer{Root: settings.InstallDirectory, KeyID: gameKeyID, PublicKey: gameKey, Release: releaseMode == "true"}
 	gamePath := os.Getenv("FFRESTART_GAME_PATH")
 	launcher := launch.NewService(gamePath, launch.ExecStarter{}, checker)
 	launcher.SetInstalledGame(&gameInstallation{installer: installer}, installedGameExecutable())
 	launcher.SetUpdateTimeout(1500 * time.Millisecond)
-	refresh := &auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}}
+	launcher.SetTestArguments(hooks.gameArgs)
+	refresh := hooks.refreshStore(&auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}})
 	app := NewApp(launcher, refresh)
+	if hooks.enabled {
+		app.openBrowser = hooks.openURL
+	}
 	app.ConfigureIdentityClient(newIdentityHTTPClient())
 	app.configureQuit(func() { wailsruntime.Quit(app.ctx) })
 	app.configureStateChanged(func() { wailsruntime.EventsEmit(app.ctx, "auth:state-changed") })

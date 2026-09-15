@@ -123,6 +123,7 @@ type Service struct {
 	updateOnce    sync.Once
 	updateTimeout time.Duration
 	launchGrace   time.Duration
+	testArguments []string
 }
 
 func NewService(gamePath string, starter Starter, checker UpdateChecker) *Service {
@@ -137,6 +138,15 @@ func NewService(gamePath string, starter Starter, checker UpdateChecker) *Servic
 
 func (s *Service) SetUpdateTimeout(timeout time.Duration) { s.updateTimeout = timeout }
 func (s *Service) SetLaunchGrace(grace time.Duration)     { s.launchGrace = grace }
+
+// SetTestArguments appends development-client automation arguments after
+// --auth-token-stdin on multiplayer launches. Only the development e2e test
+// hook (FFRESTART_E2E_GAME_ARGS) sets them; the ticket still goes to stdin.
+func (s *Service) SetTestArguments(args []string) {
+	s.mu.Lock()
+	s.testArguments = append([]string(nil), args...)
+	s.mu.Unlock()
+}
 
 // SetInstalledGame makes the patch installer's current immutable version the
 // default. A configured game path remains a development override.
@@ -291,7 +301,10 @@ func (s *Service) PlayMultiplayer(ctx context.Context, ticket []byte, bootstrap 
 	if !ok {
 		return errors.New("multiplayer stdin hand-off is unavailable")
 	}
-	process, err := starter.StartWithStdin(ctx, path, payload, "--auth-token-stdin")
+	s.mu.RLock()
+	args := append([]string{"--auth-token-stdin"}, s.testArguments...)
+	s.mu.RUnlock()
+	process, err := starter.StartWithStdin(ctx, path, payload, args...)
 	if err != nil {
 		return fmt.Errorf("start multiplayer game: %w", err)
 	}

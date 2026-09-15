@@ -90,7 +90,7 @@ func NewApp(launcher *launch.Service, tokens auth.TokenVault) *App {
 	app.devicePrompt = func(prompt auth.DevicePrompt) error {
 		wailsruntime.EventsEmit(app.ctx, "auth:device-prompt", map[string]string{"verificationUri": prompt.VerificationURI, "verificationUriComplete": prompt.VerificationURIComplete, "userCode": prompt.UserCode})
 		if prompt.VerificationURIComplete != "" {
-			wailsruntime.BrowserOpenURL(app.ctx, prompt.VerificationURIComplete)
+			return app.openBrowser(prompt.VerificationURIComplete)
 		}
 		return nil
 	}
