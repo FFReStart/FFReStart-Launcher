@@ -144,6 +144,68 @@ func TestFailedLaunchKeepsLauncherOpen(t *testing.T) {
 	}
 }
 
+// After a sign-out everywhere the launcher's refresh token still refreshes at
+// the identity provider, but the control API refuses every token of the old
+// sign-in. The launcher must return to signed out instead of showing a signed-in
+// state whose every PLAY MULTIPLAYER fails.
+func TestRefusedSignInReturnsToSignedOut(t *testing.T) {
+	var revoked atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/oauth/v2/device_authorization":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"device_code": "device-secret", "user_code": "FUSION", "verification_uri": "https://example.test/device", "interval": 1})
+		case "/oauth/v2/token":
+			_ = json.NewEncoder(writer).Encode(map[string]string{"access_token": "access-secret", "refresh_token": "refresh-secret"})
+		case "/v1/me", "/v1/launch-tickets":
+			if revoked.Load() {
+				writer.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_ = json.NewEncoder(writer).Encode(map[string]any{"id": "account-uuid", "status": "active"})
+		case "/v1/bootstrap":
+			_ = json.NewEncoder(writer).Encode(map[string]any{"realms": []map[string]any{{"realmId": "local", "name": "Local", "status": "online", "admissionOpen": true, "worldEndpoint": "127.0.0.1:27020", "gnsCaKeyId": "dev-ca", "protocolMin": 1, "protocolMax": 1, "contentVersion": "dev-content", "updateChannel": "development"}}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	starter := &appCaptureStarter{}
+	launcher := launch.NewService("game.exe", starter, nil)
+	launcher.SetLaunchGrace(time.Millisecond)
+	refreshStore := &auth.MemoryStore{}
+	settingsPath := filepath.Join(t.TempDir(), "settings.json")
+	settings := defaultSettings(t.TempDir())
+	settings.Server = testServerConfiguration(server.URL)
+	app := NewApp(launcher, nil)
+	app.ConfigureExperience(&settingsStore{path: settingsPath}, settings, settings.InstallDirectory, refreshStore)
+	app.ConfigureInstaller(nil, "", server.Client())
+	app.ConfigureIdentityClient(server.Client())
+	app.ConfigureMultiplayerBuild(1, strings.Repeat("a", 64))
+	app.devicePoll = time.Millisecond
+	app.devicePrompt = func(auth.DevicePrompt) error { return nil }
+	app.startup(context.Background())
+	if err := app.SignInWithCode(true); err != nil {
+		t.Fatal(err)
+	}
+	revoked.Store(true)
+	if err := app.PlayMultiplayer(); !errors.Is(err, errSignInEnded) {
+		t.Fatalf("PlayMultiplayer after the server refused the sign-in = %v, want %v", err, errSignInEnded)
+	}
+	if starter.payload != nil {
+		t.Fatal("the game started without a ticket")
+	}
+	if state := app.GetLauncherState(); state.SignedIn || state.AccountID != "" {
+		t.Fatalf("the launcher still shows the refused sign-in: %+v", state)
+	}
+	if _, err := refreshStore.Load(); err == nil {
+		t.Fatal("the refused sign-in's refresh token was kept")
+	}
+	if saved := (&settingsStore{path: settingsPath}).Load(t.TempDir()); saved.AuthFlow != "" {
+		t.Fatalf("the next start would retry the refused sign-in (auth flow %q)", saved.AuthFlow)
+	}
+}
+
 func TestDeviceSignInRefreshTicketAndHandoff(t *testing.T) {
 	const (
 		accessOne = "access-secret-one"

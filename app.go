@@ -428,6 +428,10 @@ func (a *App) acceptTokens(ctx context.Context, tokens auth.Tokens, flow string,
 		tokens = refreshed
 		account, err = api.Me(ctx, tokens.AccessToken)
 	}
+	if errors.Is(err, multiplayer.ErrUnauthorized) {
+		a.endSignIn()
+		return errSignInEnded
+	}
 	if err != nil {
 		return fmt.Errorf("load multiplayer account: %w", err)
 	}
@@ -537,6 +541,10 @@ func (a *App) PlayMultiplayer() error {
 		a.mu.RUnlock()
 		ticket, err = api.LaunchTicket(ctx, accessToken, realmID, protocol, buildHash)
 	}
+	if errors.Is(err, multiplayer.ErrUnauthorized) {
+		a.endSignIn()
+		return errSignInEnded
+	}
 	if err != nil {
 		return err
 	}
@@ -603,6 +611,22 @@ func (a *App) restoreSessionLocked(ctx context.Context) error {
 		return fmt.Errorf("refresh multiplayer sign-in: %w", err)
 	}
 	return a.acceptTokens(ctx, tokens, flow, true)
+}
+
+// errSignInEnded reports a sign-in the control API refuses even after a
+// refresh: signed out everywhere, or the account was changed or suspended.
+var errSignInEnded = errors.New("your multiplayer sign-in has ended; sign in again")
+
+// endSignIn returns the launcher to signed out and forgets the refresh token,
+// so the next start does not retry a sign-in the server already refused.
+func (a *App) endSignIn() {
+	a.clearSession()
+	if a.refreshStore != nil {
+		_ = a.refreshStore.Clear()
+	}
+	if a.stateChanged != nil {
+		a.stateChanged()
+	}
 }
 
 func (a *App) clearSession() {
