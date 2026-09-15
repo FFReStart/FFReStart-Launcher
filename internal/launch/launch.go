@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -45,27 +46,53 @@ func (f FuncStarter) Start(ctx context.Context, path string, args ...string) (Pr
 type ExecStarter struct{}
 
 func (ExecStarter) Start(_ context.Context, path string, args ...string) (Process, error) {
-	// #nosec G204 -- path is the executable explicitly configured by the local user.
-	cmd := exec.Command(path, args...)
-	cmd.Dir = filepath.Dir(path)
-	configureDetachedProcess(cmd)
-	if err := cmd.Start(); err != nil {
+	cmd, _, err := startDetached(path, args, configureDetachedProcess, false)
+	if err != nil {
 		return nil, err
 	}
 	return cmd, nil
 }
 
-func (ExecStarter) StartWithStdin(_ context.Context, path string, payload []byte, args ...string) (Process, error) {
+// startDetached starts the game so that it outlives the launcher. When the
+// launcher itself runs in a job that forbids breakaway (some terminals and
+// parent applications start programs that way), Windows refuses the detached
+// start with "Access is denied"; the game then starts inside that job instead.
+func startDetached(path string, args []string, configure func(*exec.Cmd), withStdin bool) (*exec.Cmd, io.WriteCloser, error) {
+	cmd, stdin, err := startCommand(path, args, configure, withStdin, false)
+	if err != nil && breakawayRefused(err) {
+		cmd, stdin, err = startCommand(path, args, configure, withStdin, true)
+	}
+	return cmd, stdin, err
+}
+
+func startCommand(path string, args []string, configure func(*exec.Cmd), withStdin, insideJob bool) (*exec.Cmd, io.WriteCloser, error) {
 	// #nosec G204 -- path is the executable explicitly configured by the local user.
 	cmd := exec.Command(path, args...)
 	cmd.Dir = filepath.Dir(path)
-	configureDetachedStdinProcess(cmd)
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, err
+	configure(cmd)
+	if insideJob {
+		stayInJob(cmd)
+	}
+	var stdin io.WriteCloser
+	if withStdin {
+		pipe, err := cmd.StdinPipe()
+		if err != nil {
+			return nil, nil, err
+		}
+		stdin = pipe
 	}
 	if err := cmd.Start(); err != nil {
-		_ = stdin.Close()
+		if stdin != nil {
+			_ = stdin.Close()
+		}
+		return nil, nil, err
+	}
+	return cmd, stdin, nil
+}
+
+func (ExecStarter) StartWithStdin(_ context.Context, path string, payload []byte, args ...string) (Process, error) {
+	cmd, stdin, err := startDetached(path, args, configureDetachedStdinProcess, true)
+	if err != nil {
 		return nil, err
 	}
 	if _, err := stdin.Write(payload); err != nil {

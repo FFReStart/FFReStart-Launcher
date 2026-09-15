@@ -3,6 +3,7 @@
 package launch
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 )
@@ -28,4 +29,15 @@ func configureDetachedProcess(command *exec.Cmd) {
 func configureDetachedStdinProcess(command *exec.Cmd) {
 	configureDetachedProcess(command)
 	command.SysProcAttr.NoInheritHandles = false
+}
+
+// breakawayRefused reports a start that Windows refused, which for a detached
+// start means the launcher runs in a job that does not allow breakaway.
+func breakawayRefused(err error) bool {
+	return errors.Is(err, syscall.ERROR_ACCESS_DENIED)
+}
+
+// stayInJob keeps every other detached setting and drops only the breakaway.
+func stayInJob(command *exec.Cmd) {
+	command.SysProcAttr.CreationFlags &^= createBreakawayFromJob
 }
