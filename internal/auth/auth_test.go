@@ -75,7 +75,7 @@ func TestBrowserLoginUsesLoopbackS256StateAndNonce(t *testing.T) {
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	tokens, err := BrowserLogin(ctx, BrowserConfig{Issuer: server.URL, ClientID: clientID, AuthURL: server.URL + "/authorize", TokenURL: server.URL + "/token"}, func(location string) error {
+	tokens, err := BrowserLogin(ctx, BrowserConfig{Issuer: server.URL, ClientID: clientID, AuthURL: server.URL + "/authorize", TokenURL: server.URL + "/token", Client: server.Client()}, func(location string) error {
 		go func() {
 			response, _ := http.Get(location) // #nosec G107 -- test server supplies this local URL.
 			if response != nil {
@@ -109,7 +109,7 @@ func TestDeviceCodePolling(t *testing.T) {
 	}))
 	defer server.Close()
 	var prompt DevicePrompt
-	tokens, err := DeviceLogin(context.Background(), DeviceConfig{ClientID: "ffr-launcher", DeviceURL: server.URL + "/device", TokenURL: server.URL + "/token", PollInterval: time.Millisecond}, func(value DevicePrompt) error { prompt = value; return nil })
+	tokens, err := DeviceLogin(context.Background(), DeviceConfig{ClientID: "ffr-launcher", DeviceURL: server.URL + "/device", TokenURL: server.URL + "/token", Client: server.Client(), PollInterval: time.Millisecond}, func(value DevicePrompt) error { prompt = value; return nil })
 	if err != nil || prompt.UserCode != "FUSION" || tokens.RefreshToken != "refresh" || polls.Load() != 2 {
 		t.Fatalf("unexpected device flow: %#v %#v %v", prompt, tokens, err)
 	}
@@ -138,11 +138,29 @@ func TestInvalidGrantClearsRefreshToken(t *testing.T) {
 		_, _ = writer.Write([]byte(`{"error":"invalid_grant"}`))
 	}))
 	defer server.Close()
-	_, err := Refresh(context.Background(), server.URL, "ffr-launcher", store)
+	_, err := RefreshWithClient(context.Background(), server.URL, "ffr-launcher", store, server.Client())
 	if !errors.Is(err, ErrReauthenticationRequired) {
 		t.Fatalf("got %v", err)
 	}
 	if _, err := store.Load(); err == nil {
 		t.Fatal("refresh token was not cleared")
+	}
+}
+
+func TestRefreshKeepsTokenWhenRotationResponseOmitsSuccessor(t *testing.T) {
+	t.Parallel()
+	store := &MemoryStore{}
+	_ = store.Save("current-refresh")
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(writer).Encode(map[string]string{"access_token": "new-access"})
+	}))
+	defer server.Close()
+	tokens, err := RefreshWithClient(context.Background(), server.URL, "launcher", store, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := store.Load()
+	if err != nil || tokens.RefreshToken != "current-refresh" || stored != "current-refresh" {
+		t.Fatalf("refresh token was lost: tokens=%+v stored=%q err=%v", tokens, stored, err)
 	}
 }

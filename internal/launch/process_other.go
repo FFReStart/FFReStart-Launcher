@@ -10,3 +10,7 @@ import (
 func configureDetachedProcess(command *exec.Cmd) {
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
+
+func configureDetachedStdinProcess(command *exec.Cmd) {
+	configureDetachedProcess(command)
+}

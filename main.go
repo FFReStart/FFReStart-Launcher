@@ -2,12 +2,15 @@ package main
 
 import (
 	"embed"
+	"encoding/hex"
 	"io/fs"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/FFReStart/FFReStart-Launcher/internal/auth"
@@ -22,11 +25,18 @@ import (
 )
 
 var (
-	releaseMode        = "false"
-	updateKeyID        = ""
-	updatePublicKeyHex = ""
-	gameKeyID          = ""
-	gamePublicKeyHex   = ""
+	releaseMode                 = "false"
+	updateKeyID                 = ""
+	updatePublicKeyHex          = ""
+	gameKeyID                   = ""
+	gamePublicKeyHex            = ""
+	productionIssuer            = ""
+	productionControlAPI        = ""
+	productionLauncherClientID  = ""
+	productionDeviceClientID    = ""
+	productionAudienceProjectID = ""
+	productionProtocolVersion   = "1"
+	productionBuildHash         = "0000000000000000000000000000000000000000000000000000000000000000"
 )
 
 //go:embed all:frontend/dist
@@ -61,7 +71,32 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	protocol, err := strconv.ParseUint(productionProtocolVersion, 10, 32)
+	buildHashBytes, hashErr := hex.DecodeString(productionBuildHash)
+	if err != nil || protocol == 0 || hashErr != nil || len(buildHashBytes) != 32 {
+		log.Fatal("multiplayer build metadata is invalid")
+	}
 	settings := store.Load(gameRoot)
+	if settings.Server.Issuer == "" {
+		controlAPI := firstConfigured(productionControlAPI, os.Getenv("FFRESTART_CONTROL_API_BASE_URL"))
+		candidate := ServerConfiguration{
+			Issuer:            firstConfigured(productionIssuer, os.Getenv("FFRESTART_ZITADEL_ISSUER")),
+			ControlAPIBaseURL: controlAPI,
+			BootstrapURL:      controlAPI + "/v1/bootstrap",
+			LaunchJWKSURL:     controlAPI + "/.well-known/jwks.json",
+			ProtocolVersion:   uint32(protocol),
+			BuildHash:         strings.ToLower(productionBuildHash),
+			LauncherClientID:  firstConfigured(productionLauncherClientID, os.Getenv("FFRESTART_ZITADEL_CLIENT_ID")),
+			DeviceClientID:    firstConfigured(productionDeviceClientID, os.Getenv("FFRESTART_ZITADEL_DEVICE_CLIENT_ID")),
+			AudienceProjectID: firstConfigured(productionAudienceProjectID, os.Getenv("FFRESTART_ZITADEL_AUDIENCE_PROJECT_ID")),
+		}
+		if candidate.Issuer != "" || candidate.ControlAPIBaseURL != "" || candidate.LauncherClientID != "" || candidate.DeviceClientID != "" {
+			settings.Server, err = validateServerConfiguration(candidate)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
 	installer := &patch.Installer{Root: settings.InstallDirectory, KeyID: gameKeyID, PublicKey: gameKey, Release: releaseMode == "true"}
 	gamePath := os.Getenv("FFRESTART_GAME_PATH")
 	launcher := launch.NewService(gamePath, launch.ExecStarter{}, checker)
@@ -69,12 +104,15 @@ func main() {
 	launcher.SetUpdateTimeout(1500 * time.Millisecond)
 	refresh := &auth.FallbackStore{Primary: auth.KeyringStore{Service: auth.KeyringService, User: "refresh-token"}, Memory: &auth.MemoryStore{}}
 	app := NewApp(launcher, refresh)
+	app.ConfigureIdentityClient(newIdentityHTTPClient())
 	app.configureQuit(func() { wailsruntime.Quit(app.ctx) })
+	app.configureStateChanged(func() { wailsruntime.EventsEmit(app.ctx, "auth:state-changed") })
 	app.ConfigureInstaller(installer, os.Getenv("FFRESTART_GAME_MANIFEST_URL"), nil)
 	if os.Getenv("FFRESTART_GAME_MANIFEST_URL") == "" {
 		app.configureDeveloperInstaller(&patch.DeveloperInstaller{Root: settings.InstallDirectory})
 	}
-	app.ConfigureExperience(store, settings, gameRoot, refresh, authConfig{Issuer: os.Getenv("FFRESTART_ZITADEL_ISSUER"), ClientID: os.Getenv("FFRESTART_ZITADEL_CLIENT_ID")})
+	app.ConfigureExperience(store, settings, gameRoot, refresh)
+	app.ConfigureMultiplayerBuild(uint32(protocol), strings.ToLower(productionBuildHash))
 	frontendAssets, err := fs.Sub(assets, "frontend/dist")
 	if err != nil {
 		log.Fatal(err)
@@ -94,6 +132,22 @@ func main() {
 	}); err != nil {
 		log.Print(err)
 	}
+}
+
+func newIdentityHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+}
+
+func firstConfigured(primary, fallback string) string {
+	if strings.TrimSpace(primary) != "" {
+		return primary
+	}
+	return fallback
 }
 
 func localMusicPath() string {

@@ -15,11 +15,14 @@ import (
 const defaultMusicVolume = 0.35
 
 type LauncherSettings struct {
-	Version          int     `json:"version"`
-	SetupComplete    bool    `json:"setupComplete"`
-	InstallDirectory string  `json:"installDirectory"`
-	MusicVolume      float64 `json:"musicVolume"`
-	MusicMuted       bool    `json:"musicMuted"`
+	Version          int                 `json:"version"`
+	SetupComplete    bool                `json:"setupComplete"`
+	InstallDirectory string              `json:"installDirectory"`
+	MusicVolume      float64             `json:"musicVolume"`
+	MusicMuted       bool                `json:"musicMuted"`
+	Server           ServerConfiguration `json:"server"`
+	AuthFlow         string              `json:"authFlow,omitempty"`
+	SelectedRealm    string              `json:"selectedRealm,omitempty"`
 }
 
 type settingsStore struct {
@@ -36,7 +39,7 @@ func newSettingsStore() (*settingsStore, error) {
 }
 
 func defaultSettings(gameRoot string) LauncherSettings {
-	return LauncherSettings{Version: 1, InstallDirectory: gameRoot, MusicVolume: defaultMusicVolume}
+	return LauncherSettings{Version: 2, InstallDirectory: gameRoot, MusicVolume: defaultMusicVolume}
 }
 
 func (s *settingsStore) Load(gameRoot string) LauncherSettings {
@@ -44,9 +47,10 @@ func (s *settingsStore) Load(gameRoot string) LauncherSettings {
 	defer s.mu.Unlock()
 	settings := defaultSettings(gameRoot)
 	data, err := os.ReadFile(s.path) // #nosec G304 -- fixed per-user launcher path.
-	if err != nil || json.Unmarshal(data, &settings) != nil || settings.Version != 1 {
+	if err != nil || json.Unmarshal(data, &settings) != nil || (settings.Version != 1 && settings.Version != 2) {
 		return defaultSettings(gameRoot)
 	}
+	settings.Version = 2
 	var legacyAudio struct {
 		AutoplayMusic *bool `json:"autoplayMusic"`
 		MusicAutoplay *bool `json:"musicAutoplay"`
@@ -76,13 +80,13 @@ func (s *settingsStore) Load(gameRoot string) LauncherSettings {
 func (s *settingsStore) Save(settings LauncherSettings) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	settings.Version = 1
+	settings.Version = 2
 	settings.MusicVolume = normaliseVolume(settings.MusicVolume)
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil { // #nosec G703 -- fixed app-data path or test-owned store.
 		return err
 	}
 	return update.AtomicWriteFile(s.path, data, 0o600)
