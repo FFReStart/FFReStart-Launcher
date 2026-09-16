@@ -24,6 +24,23 @@ Set `FFRESTART_GAME_PATH` to the game executable and optionally set
 `FFRESTART_UPDATE_MANIFEST_URL` for the single best-effort background update
 check. Offline play never requires either the network or an account.
 
+### Development test hooks (not a product feature)
+
+The automated launcher end-to-end check in ReStart-HTTP-Server
+(`just dev-e2e-check --launcher`) drives this launcher's real executable. A
+development build accepts two environment variables for it; a release build
+(`just build-release`, `releaseMode=true`) never reads them.
+
+- `FFRESTART_E2E_HOOKS=1` keeps refresh tokens in process memory, so the OS
+  keyring entry of your own sign-in is never read, written or cleared, and
+  writes every URL the launcher would open in the system browser to stdout as
+  one JSON line, `{"openUrl": "..."}`, instead of opening it.
+- `FFRESTART_E2E_GAME_ARGS`, a JSON array, adds development-client automation
+  arguments after `--auth-token-stdin` on multiplayer launches: `--ffr-e2e-*`
+  flags with their values and the Unity flags `-batchmode`, `-nographics`,
+  `-logFile` and `-screen-*`. Anything else stops the launcher. The ticket
+  still goes only to stdin.
+
 Release builds inject only the Ed25519 public verification key; signing keys
 belong exclusively to the protected release environment:
 

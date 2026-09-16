@@ -14,3 +14,8 @@ func configureDetachedProcess(command *exec.Cmd) {
 func configureDetachedStdinProcess(command *exec.Cmd) {
 	configureDetachedProcess(command)
 }
+
+// Jobs are a Windows concept; a detached start elsewhere is never retried.
+func breakawayRefused(error) bool { return false }
+
+func stayInJob(*exec.Cmd) {}

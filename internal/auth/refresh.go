@@ -34,12 +34,16 @@ func RefreshWithClient(ctx context.Context, tokenURL, clientID string, store Ref
 		IDToken      string `json:"id_token"`
 		Error        string `json:"error"`
 	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-		return Tokens{}, err
-	}
-	if body.Error == "invalid_grant" {
+	decodeErr := json.NewDecoder(response.Body).Decode(&body)
+	// A refused refresh token needs a new sign-in. RFC 6749 names the refusal
+	// invalid_grant, but ZITADEL answers a token that rotation replaced with
+	// 400 invalid_request (Errors.OIDCSession.RefreshTokenInvalid).
+	if body.Error == "invalid_grant" || response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusUnauthorized {
 		_ = store.Clear()
 		return Tokens{}, ErrReauthenticationRequired
+	}
+	if decodeErr != nil {
+		return Tokens{}, decodeErr
 	}
 	if response.StatusCode != http.StatusOK {
 		return Tokens{}, fmt.Errorf("refresh failed: %s", body.Error)

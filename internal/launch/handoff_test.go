@@ -144,6 +144,28 @@ func protobufBytesField(t *testing.T, data []byte, wanted uint64) []byte {
 	return nil
 }
 
+func TestTestArgumentsFollowTheStdinFlag(t *testing.T) {
+	const ticket = "ticket-secret-never-in-argv"
+	starter := &captureStdinStarter{}
+	service := NewService("game", starter, nil)
+	service.SetLaunchGrace(time.Millisecond)
+	arguments := []string{"-batchmode", "--ffr-e2e-result", `C:\e2e\result.json`}
+	service.SetTestArguments(arguments)
+	arguments[0] = "changed after the call"
+	bootstrap := LaunchBootstrap{RealmID: "local", WorldEndpoint: "127.0.0.1:27020", GNSCAKeyID: "dev-ca", ProtocolMin: 1, ProtocolMax: 2, ContentVersion: "dev-content"}
+	if err := service.PlayMultiplayer(context.Background(), []byte(ticket), bootstrap); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--auth-token-stdin", "-batchmode", "--ffr-e2e-result", `C:\e2e\result.json`}
+	if strings.Join(starter.args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("argv = %#v, want %#v", starter.args, want)
+	}
+	_, size := binary.Uvarint(starter.payload)
+	if got := string(protobufBytesField(t, starter.payload[size:], 1)); got != ticket {
+		t.Fatalf("ticket field = %q", got)
+	}
+}
+
 func TestMultiplayerLaunchUsesDelimitedStdinWithoutTokenArgv(t *testing.T) {
 	const ticket = "ticket-secret-never-in-argv"
 	starter := &captureStdinStarter{}
